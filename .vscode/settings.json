@@ -1,7 +1,0 @@
-{
-  "clang.executable": "clang",
-  "clang.cxxflags": [
-    "-I/Users/Boelroy/Documents/Project/github/ChakraCore/lib/Jsrt",
-    "-I/usr/local/opt/icu4c/include"
-  ]
-}
