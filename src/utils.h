@@ -5,13 +5,12 @@
 #include <vector>
 #include <cstdio>
 #include <string>
-#include "unicode/utypes.h"
 
 namespace ion {
 namespace core{
 namespace utils{
 
-  inline bool ReadFile(const std::string& filename, std::vector<UChar>* out) {
+  inline bool ReadFile(const std::string& filename, std::vector<char>* out) {
     if (std::FILE* fp = fopen(filename.c_str(), "rb")) {
       std::fseek(fp, 0L, SEEK_END);
       const std::size_t filesize = std::ftell(fp);

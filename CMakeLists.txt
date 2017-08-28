@@ -1,10 +1,27 @@
-cmake_minimum_required(VERSION 3.9)
+cmake_minimum_required(VERSION 3.2)
+project (Ion)
 
-PROJECT(Ion)
+# set(ICU_INCLUDE_PATH ......) # -> if you have a custom ICU setup
+# set(CHAKRACORE_PATH "................/Github/ChakraCore/") # -> location of the ChakraCore Repo
+# set(CHAKRACORE_LIB_TYPE ....Release or Test or Debug) # -> by default Release
+if (NOT CHAKRACORE_PATH)
+    message (FATAL_ERROR "You should set CHAKRACORE_PATH to run this sample.
+            You may set it from CMake or command line (-DCHAKRACORE_PATH=<path>)
+            ")
+endif()
 
-INCLUDE_DIRECTORIES(
-    src
-)
+message ("-- Compiling ChakraCore..")
 
-AUX_SOURCE_DIRECTORY(src DIR_SRCS)
-ADD_EXECUTABLE(ion src/ion.cc)
+# Embed ChakraCore
+include(ChakraCoreEmbed.cmake)
+include_directories(src)
+add_executable(ion src/ion.cc)
+
+target_include_directories (ion
+  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CHAKRACORE_INCLUDE_PATH} # add ChakraCore include path
+  )
+
+target_link_libraries (ion
+  ${CHAKRACORE_LINKER_OPTIONS} # add ChakraCore linker options
+  )
