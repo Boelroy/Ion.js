@@ -1,4 +1,0 @@
-{
-   global: DllMain; Js*;
-   local: *;
-};

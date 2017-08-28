@@ -1,9 +1,0 @@
-[
-  {
-    "this": "Object {...}",
-    "locals": {
-      "a": "number 1",
-      "x": "undefined undefined"
-    }
-  }
-]
