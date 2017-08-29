@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string>
 #include <vector>
+#include <iostream>
 
 #include "ChakraCore.h"
 #include "ion.h"
@@ -16,28 +17,87 @@ namespace runtime{
         FAIL_CHECK(JsCreateRuntime(JsRuntimeAttributeNone, nullptr, &runtime));
         FAIL_CHECK(JsCreateContext(runtime, &context));
         FAIL_CHECK(JsSetCurrentContext(context));
+        currentSourceContext = 0;
       }
 
       ~Runtime() {
         Exit();
       }
 
+      void Init(int argc, char** argv) {
+        JsValueRef global;
+        FAIL_CHECK(JsCreateObject(&global));
+        JsValueRef globalObject;
+        FAIL_CHECK(JsGetGlobalObject(&globalObject));
+
+        JsPropertyIdRef globalProperty;
+        JsCreatePropertyId("global", 6, &globalProperty);
+
+        JsSetProperty(globalObject, globalProperty, global, false);
+      }
+
+      JsValueRef Console(JsValueRef callee, bool isConstructCall, JsValueRef *arguments, unsigned short argumentCount, void *callbackState) {
+        JsValueRef stringValue;
+        FAIL_CHECK(JsConvertValueToString(arguments[0], &stringValue));
+        const char *str;
+        size_t length;
+      }
+
       JsValueRef RunScript(std::vector<char> source, std::string filename) {
         JsValueRef result;
-        FAIL_CHECK(JsRunScript(source.data(), 0, filename.c_str(), &result));
+        std::vector<char> wrapper = WrapModule(source);
+
+        JsValueRef sourceUrl;
+        FAIL_CHECK(JsCreateString(filename.c_str(), filename.length(), &sourceUrl));
+
+        JsValueRef src;
+        FAIL_CHECK(JsCreateString(wrapper.data(), wrapper.size(), &src));
+
+        FAIL_CHECK(JsRun(src, this->currentSourceContext++, sourceUrl, JsParseScriptAttributeNone, &result));
+
+        JsValueRef functionReturn;
+        FAIL_CHECK(JsCallFunction(result, NULL, 2, &functionReturn));
 
         return result;
       }
 
       void Exit() {
-        FAIL_CHECK(JsSetCurrentContext(JS_INVALID_REFERENCE), "failed to cleanup current context.");
-        FAIL_CHECK(JsDisposeRuntime(runtime), "failed to cleanup runtime.");
+        FAIL_CHECK(JsSetCurrentContext(JS_INVALID_REFERENCE));
+        FAIL_CHECK(JsDisposeRuntime(runtime));
       }
 
     private:
+      std::vector<char> WrapModule(std::vector<char> source) {
+        std::string wrap_header = "(function (__filename, __dirname) {";
+        std::string wrap_tail = "})";
+        
+        // source.insert(wrap_tail.begin(), wrap_tail.length(),source.size());
+        return source;
+      }
+
+      JsErrorCode DefineHostCallback(JsValueRef globalObject, const char *callbackName, JsNativeFunction callback, void *callbackState)
+      {
+        JsPropertyIdRef propertyId;
+        FAIL_CHECK(JsCreatePropertyId(callbackName, &propertyId));
+      
+        JsValueRef function;
+        FAIL_CHECK(JsCreateFunction(callback, callbackState, &function));
+
+        FAIL_CHECK(JsSetProperty(globalObject, propertyId, function, true));
+      
+        return JsNoError;
+      }
+
+    private:
+      
       JsRuntimeHandle runtime;
       JsContextRef context;
-      unsigned currentSourceContext = 0;
+      unsigned currentSourceContext;
+      static std::string MODLUE_WRAPPER[];
   };
 
+  std::string Runtime::MODLUE_WRAPPER[] = {
+    "(function (__filename, __dirname) {",
+    "})"
+  };
 }}}

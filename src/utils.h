@@ -1,7 +1,6 @@
 #ifndef ION_CORE_UTILS
 #define ION_CORE_UTILS
 
-
 #include <vector>
 #include <cstdio>
 #include <string>
@@ -18,7 +17,7 @@ namespace utils{
         std::rewind(fp);
         const std::size_t offset = out->size();
         out->resize(offset + filesize);
-        if (std::fread(out->data()+ offset, filesize, 1, fp) < 1) {
+        if (std::fread(out->data() + offset, filesize, 1, fp) < 1) {
           const std::string err = "ion can't read \"" + filename + "\"";
           std::perror(err.c_str());
           std::fclose(fp);

@@ -21,7 +21,7 @@ do                                                 \
 } while(0)
 
 
-#define ION_FUNCTION
+#define ION_FUNCTION(cmd)
 
 
 #endif
