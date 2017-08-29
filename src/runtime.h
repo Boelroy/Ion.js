@@ -10,7 +10,7 @@
 namespace ion {
 namespace core{
 namespace runtime{
-  
+
   class Runtime {
     public:
       Runtime() {
@@ -34,13 +34,8 @@ namespace runtime{
         JsCreatePropertyId("global", 6, &globalProperty);
 
         JsSetProperty(globalObject, globalProperty, global, false);
-      }
 
-      JsValueRef Console(JsValueRef callee, bool isConstructCall, JsValueRef *arguments, unsigned short argumentCount, void *callbackState) {
-        JsValueRef stringValue;
-        FAIL_CHECK(JsConvertValueToString(arguments[0], &stringValue));
-        const char *str;
-        size_t length;
+        DefineHostCallback(global, "console", Console, nullptr);
       }
 
       JsValueRef RunScript(std::vector<char> source, std::string filename) {
@@ -54,9 +49,6 @@ namespace runtime{
         FAIL_CHECK(JsCreateString(wrapper.data(), wrapper.size(), &src));
 
         FAIL_CHECK(JsRun(src, this->currentSourceContext++, sourceUrl, JsParseScriptAttributeNone, &result));
-
-        JsValueRef functionReturn;
-        FAIL_CHECK(JsCallFunction(result, NULL, 2, &functionReturn));
 
         return result;
       }
@@ -75,10 +67,11 @@ namespace runtime{
         return source;
       }
 
-      JsErrorCode DefineHostCallback(JsValueRef globalObject, const char *callbackName, JsNativeFunction callback, void *callbackState)
+      JsErrorCode DefineHostCallback(JsValueRef globalObject, std::string callbackName, JsNativeFunction callback, void *callbackState)
       {
         JsPropertyIdRef propertyId;
-        FAIL_CHECK(JsCreatePropertyId(callbackName, &propertyId));
+
+        FAIL_CHECK(JsCreatePropertyId(callbackName.c_str(), callbackName.length(), &propertyId));
       
         JsValueRef function;
         FAIL_CHECK(JsCreateFunction(callback, callbackState, &function));

@@ -17,6 +17,11 @@ int main(int argc, char** argv) {
 
   std::auto_ptr<ion::core::runtime::Runtime> runtime (new ion::core::runtime::Runtime());
 
+  runtime->Init(argc, argv);
   runtime->RunScript(src, std::string(filename));
+
+#ifdef _WIN32
+  system("pause");
+#endif
   return 0;
 }

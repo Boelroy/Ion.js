@@ -25,6 +25,7 @@ set (CHAKRACORE_WIN_SHORT "x64_debug")
 endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL Windows)
+set(CMAKE_SUPPRESS_REGENERATION true)
 set (COREE_SCRIPT_EXEC_COMMAND "C:\\Program Files (x86)\\MSBuild\\14.0\\Bin\\MSBuild.exe")
 # todo: allow platform selection ?
 set (COREE_SCRIPT_ARGS "/m" "/p:Configuration=${CHAKRACORE_LIB_TYPE}" "/p:Platform=x64" "Build\\Chakra.Core.sln")
@@ -49,6 +50,7 @@ find_library(CHAKRACORE_STATIC_LIB_PATH ChakraCoreStatic PATHS ${CHAKRACORE_BUIL
 set (CHAKRACORE_INCLUDE_PATH
     "${CHAKRACORE_PATH}/lib/Jsrt/")
 else() # Windows
+SET(CMAKE_FIND_LIBRARY_SUFFIXES ".lib" ".dll")
 set (CHAKRACORE_BUILD_PATH "${CHAKRACORE_PATH}\\Build\\VcBuild\\bin\\${CHAKRACORE_WIN_SHORT}")
 find_library(CHAKRACORE_STATIC_LIB_PATH ChakraCore PATHS ${CHAKRACORE_BUILD_PATH} NO_DEFAULT_PATH)
 set (CHAKRACORE_LINKER_OPTIONS ${CHAKRACORE_STATIC_LIB_PATH})
@@ -56,6 +58,7 @@ set (CHAKRACORE_INCLUDE_PATH
     "${CHAKRACORE_PATH}\\lib\\Jsrt\\")
 endif()
 message ("ChakraCore Library is available at ${CHAKRACORE_STATIC_LIB_PATH}")
+
 
 if (CMAKE_SYSTEM_NAME STREQUAL Darwin)
 if (ICU_INCLUDE_PATH)

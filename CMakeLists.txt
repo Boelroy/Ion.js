@@ -13,7 +13,11 @@ include(ChakraCoreEmbed.cmake)
 # main
 set(ION_INCLUDE_PATH src)
 include_directories(${ION_INCLUDE_PATH})
-add_executable(ion ${ION_INCLUDE_PATH}/ion.cc)
+add_executable(ion ${ION_INCLUDE_PATH}/ion.cc
+  ${ION_INCLUDE_PATH}/env.h
+  ${ION_INCLUDE_PATH}/ion.h
+  ${ION_INCLUDE_PATH}/runtime.h
+  ${ION_INCLUDE_PATH}/utils.h)
 
 target_include_directories (ion
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}

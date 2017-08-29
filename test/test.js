@@ -1,7 +1,6 @@
-function() {
+(function() {
   var i = 0;
   var j = 1;
-
   class Calculate {
     constructor(i, j) {
       this.i = i;
@@ -15,4 +14,4 @@ function() {
 
   var cal = new Calculate(i,j);
   return cal.Add();
-}
+})(global)
