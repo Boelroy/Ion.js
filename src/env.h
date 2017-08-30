@@ -1,18 +1,18 @@
 #include "ChakraCore.h"
 #include "ion.h"
-#include <iostream>
+#include "stdio.h"
 #include "unicode.h"
 
 namespace ion {
 namespace core {
 namespace env {
-  JsValueRef Console(JsValueRef callee, bool isConstructCall, JsValueRef *arguments, unsigned short argumentCount, void *callbackState)
-	{
+  JsValueRef Debug(JsValueRef callee, bool isConstructCall, JsValueRef *arguments, unsigned short argumentCount, void *callbackState)
+  {
 		for(unsigned int index = 1; index < argumentCount; index++)
 		{
 			if (index > 1)
 			{
-				CONSOLE(" ");
+				printf(" ");
 			}
 
 			JsValueRef stringValue;
@@ -22,13 +22,12 @@ namespace env {
 			int length;
 			FAIL_CHECK(JsGetStringLength(stringValue, &length));
 
-			Char strs[length+1];
+			std::vector<char> buff(length+1);
 			size_t outputLength;
-			FAIL_CHECK(JsCopyStringUtf16(stringValue, 0, length, strs, &outputLength));
-			strs[length] = '\0';
-			CONSOLE("%S", strs);
+			FAIL_CHECK(JsCopyString(stringValue, buff.data(), length, &outputLength, &outputLength));
+			printf("%s", buff.data());
 		}
-		CONSOLE("\n");
+		printf("\n");
 		return JS_INVALID_REFERENCE;
   }
   

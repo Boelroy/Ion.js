@@ -36,19 +36,19 @@ namespace runtime{
 
         JsSetProperty(globalObject, globalProperty, global, false);
 
-        DefineHostCallback(global, "_console", ion::core::env::Console, nullptr);
+        DefineHostCallback(global, "Debug", ion::core::env::Debug, nullptr);
 
       }
 
-      JsValueRef RunScript(std::vector<char> source, std::string filename) {
+      JsValueRef RunScript(const char* source, std::string filename) {
         JsValueRef result;
-        std::vector<char> wrapper = WrapModule(source);
+        // std::vector<char> wrapper = WrapModule(source);
 
         JsValueRef sourceUrl;
         FAIL_CHECK(JsCreateString(filename.c_str(), filename.length(), &sourceUrl));
 
         JsValueRef src;
-        FAIL_CHECK(JsCreateString(wrapper.data(), wrapper.size(), &src));
+        FAIL_CHECK(JsCreateString(source, strlen(source), &src));
 
         FAIL_CHECK(JsRun(src, this->currentSourceContext++, sourceUrl, JsParseScriptAttributeNone, &result));
 

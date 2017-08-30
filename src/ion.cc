@@ -3,25 +3,23 @@
 
 #include "utils.h"
 #include "runtime.h"
+#include "natives.h"
 
 // typedef ion::core::runtime::Runtime Runtime;
 
 int main(int argc, char** argv) {
-  if (argc < 2) {
-    std::perror("you should output a javascript file path");
-    return 1;
-  }
-  std::vector<char> src;
-  char* filename = argv[1];
-  ion::core::utils::ReadFile(std::string(argv[1]), &src);
+
+  std::vector<char> bootstrapSource;
+  
 
   std::auto_ptr<ion::core::runtime::Runtime> runtime (new ion::core::runtime::Runtime());
 
   runtime->Init(argc, argv);
-  runtime->RunScript(src, std::string(filename));
+  runtime->RunScript(ion::native_bootstrap_ion, std::string("bootstrap_ion.js"));
 
 #ifdef _WIN32
   system("pause");
 #endif
+
   return 0;
 }
