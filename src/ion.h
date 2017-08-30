@@ -3,13 +3,6 @@
 
 #include "ChakraCore.h"
 
-
-#ifdef _WIN32
-typedef wchar_t UChar;
-#else
-
-#endif
-
 #define FAIL_CHECK(cmd)                             \
 do                                                 \
 {                                                  \
@@ -21,6 +14,9 @@ do                                                 \
 } while(0)
 
 
+// #define ION_SYMBOL(name)                          \
+// JsValueRef _ref;                                  \
+// JsCreatePropertyId(name, name.size() ,&ref);      \
 
 
 #endif

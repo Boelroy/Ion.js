@@ -6,6 +6,7 @@
 
 #include "ChakraCore.h"
 #include "ion.h"
+#include "env.h"
 
 namespace ion {
 namespace core{
@@ -35,7 +36,8 @@ namespace runtime{
 
         JsSetProperty(globalObject, globalProperty, global, false);
 
-        DefineHostCallback(global, "console", Console, nullptr);
+        DefineHostCallback(global, "_console", ion::core::env::Console, nullptr);
+
       }
 
       JsValueRef RunScript(std::vector<char> source, std::string filename) {

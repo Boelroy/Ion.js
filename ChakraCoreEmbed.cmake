@@ -1,10 +1,11 @@
 if (NOT ICU_INCLUDE_PATH)
-if (CMAKE_SYSTEM_NAME STREQUAL Darwin)
-    set (ICU_INCLUDE_PATH "/usr/local/opt/icu4c/include")
-    set (ICU_INCLUDE_PATH_ARG "--icu=${ICU_INCLUDE_PATH}")
-endif()
+    if (CMAKE_SYSTEM_NAME STREQUAL Darwin)
+        set (ICU_INCLUDE_PATH "/usr/local/opt/icu4c/include")
+        set (ICU_INCLUDE_PATH_ARG "--icu=${ICU_INCLUDE_PATH}")
+        include_directories(${ICU_INCLUDE_PATH})
+    endif()
 else()
-set (ICU_INCLUDE_PATH_ARG "--icu=${ICU_INCLUDE_PATH}")
+    set (ICU_INCLUDE_PATH_ARG "--icu=${ICU_INCLUDE_PATH}")
 endif()
 
 if (NOT CHAKRACORE_LIB_TYPE)
@@ -66,11 +67,13 @@ if (ICU_INCLUDE_PATH)
     find_library(ICUUC icuuc PATHS ${ICU_CC_PATH} NO_DEFAULT_PATH)
     find_library(ICU18 icui18n PATHS ${ICU_CC_PATH} NO_DEFAULT_PATH)
     find_library(ICUDATA icudata PATHS ${ICU_CC_PATH} NO_DEFAULT_PATH)
+    find_library(ICUIO icuio PATHS ${ICU_CC_PATH} NO_DEFAULT_PATH)
     if(ICUUC)
         set(ICULIB
           ${ICUUC}
           ${ICU18}
           ${ICUDATA}
+          ${ICUIO}
           )
     endif()
 endif()

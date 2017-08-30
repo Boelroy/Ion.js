@@ -1,6 +1,8 @@
 (function() {
   var i = 0;
   var j = 1;
+  // global._console("sss")
+  global._console("sss1")
   class Calculate {
     constructor(i, j) {
       this.i = i;
