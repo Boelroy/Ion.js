@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.2)
 project (Ion)
 
+
+execute_process(COMMAND "python ${CMAKE_CURRENT_SOURCE_DIR}/js2c.py")
 # set(ICU_INCLUDE_PATH ......) # -> if you have a custom ICU setup
 # set(CHAKRACORE_PATH "................/Github/ChakraCore/") # -> location of the ChakraCore Repo
 # set(CHAKRACORE_LIB_TYPE ....Release or Test or Debug) # -> by default Release
@@ -17,7 +19,10 @@ add_executable(ion ${ION_INCLUDE_PATH}/ion.cc
   ${ION_INCLUDE_PATH}/env.h
   ${ION_INCLUDE_PATH}/ion.h
   ${ION_INCLUDE_PATH}/runtime.h
-  ${ION_INCLUDE_PATH}/utils.h)
+  ${ION_INCLUDE_PATH}/unicode.h
+  ${ION_INCLUDE_PATH}/utils.h
+  ${ION_INCLUDE_PATH}/natives.h
+  ${ION_INCLUDE_PATH}/bootstrap_ion.js)
 
 target_include_directories (ion
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
