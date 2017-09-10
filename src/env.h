@@ -1,7 +1,7 @@
 #include "ChakraCore.h"
 #include "ion.h"
+#include <vector>
 #include "stdio.h"
-#include "unicode.h"
 
 namespace ion {
 namespace core {

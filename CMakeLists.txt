@@ -19,7 +19,6 @@ add_executable(ion ${ION_INCLUDE_PATH}/ion.cc
   ${ION_INCLUDE_PATH}/env.h
   ${ION_INCLUDE_PATH}/ion.h
   ${ION_INCLUDE_PATH}/runtime.h
-  ${ION_INCLUDE_PATH}/unicode.h
   ${ION_INCLUDE_PATH}/utils.h
   ${ION_INCLUDE_PATH}/natives.h
   ${ION_INCLUDE_PATH}/bootstrap_ion.js)

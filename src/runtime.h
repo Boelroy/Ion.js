@@ -7,6 +7,7 @@
 #include "ChakraCore.h"
 #include "ion.h"
 #include "env.h"
+#include "process.h"
 
 namespace ion {
 namespace core{
@@ -28,13 +29,13 @@ namespace runtime{
       void Init(int argc, char** argv) {
         JsValueRef global;
         FAIL_CHECK(JsCreateObject(&global));
+
         JsValueRef globalObject;
         FAIL_CHECK(JsGetGlobalObject(&globalObject));
 
-        JsPropertyIdRef globalProperty;
-        JsCreatePropertyId("global", 6, &globalProperty);
+        ION_DEFINLE(globalObject, "global" ,global);                                            
 
-        JsSetProperty(globalObject, globalProperty, global, false);
+        ion::core::process::Init(global);
 
         DefineHostCallback(global, "Debug", ion::core::env::Debug, nullptr);
 
