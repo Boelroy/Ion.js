@@ -1,6 +1,5 @@
 .vscode/
 build/
-deps/
 .DS_Store
 *.pyc
 src/natives.h
