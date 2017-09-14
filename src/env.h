@@ -24,7 +24,7 @@ namespace env {
 
 			std::vector<char> buff(length+1);
 			size_t outputLength;
-			FAIL_CHECK(JsCopyString(stringValue, buff.data(), length, &outputLength, &outputLength));
+			FAIL_CHECK(JsCopyString(stringValue, buff.data(), length, &outputLength));
 			printf("%s", buff.data());
 		}
 		printf("\n");

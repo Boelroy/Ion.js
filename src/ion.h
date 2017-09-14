@@ -19,7 +19,7 @@ do                                                 \
 } while(0)
 
 
-void ION_DEFINLE(napi_value target, const char* name, napi_value prop)                     
+void ion_define(napi_value target, const char* name, napi_value prop)                     
 {                                                         
   JsPropertyIdRef _ref;                                       
   JsCreatePropertyId(name, strlen(name), &_ref);            
@@ -31,7 +31,7 @@ napi_status ion_define_string_utf8(napi_value env, const char* name,const char* 
   size_t length = strlen(str);
   napi_value _str;
   FAIL_CHECK(JsCreateString(str, length, &_str));
-  ION_DEFINLE(env, name, _str);
+  ion_define(env, name, _str);
   return napi_ok;
 }
 
@@ -39,7 +39,7 @@ napi_status ion_define_string_utf8(napi_value env, const char* name,const char* 
 napi_status ion_define_int(napi_value env, const char* name,const int integer) {
   napi_value _interger;
   FAIL_CHECK(JsIntToNumber(integer, &_interger));
-  ION_DEFINLE(env, name, _interger);  
+  ion_define(env, name, _interger);  
   return napi_ok;
 }
 

@@ -1,7 +1,8 @@
+#include <limits.h>
 #include "ChakraCore.h"
 #include "ion.h"
-#include "unistd.h"
-#include <pwd.h>
+#include "uv.h"
+
 
 namespace ion {
 namespace core {
@@ -10,11 +11,15 @@ namespace process
   static void CreateEnv(JsValueRef process) {
     napi_value env;
     ion_create_object(&env);
-  
-    struct passwd *pw = getpwuid(getuid());
-    ion_define_string_utf8(env, "PWD", pw->pw_dir);
+    char buf[PATH_MAX];
+    size_t cwd_len = sizeof(buf);
+    int err = uv_cwd(buf, &cwd_len);
+    if (err)
+      buf[0] = '\0';
+    ion_define_string_utf8(env, "PWD", buf);
 
-    ION_DEFINLE(process, "env", env);
+    ion_define(process, "env", env);
+
   }
   
   void Init(JsValueRef env) {

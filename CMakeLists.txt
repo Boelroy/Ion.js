@@ -3,15 +3,22 @@ project (Ion)
 
 
 execute_process(COMMAND "python ${CMAKE_CURRENT_SOURCE_DIR}/js2c.py")
+
 # set(ICU_INCLUDE_PATH ......) # -> if you have a custom ICU setup
 # set(CHAKRACORE_PATH "................/Github/ChakraCore/") # -> location of the ChakraCore Repo
 # set(CHAKRACORE_LIB_TYPE ....Release or Test or Debug) # -> by default Release
-message ("-- Compiling ChakraCore..")
 
+message ("-- Compiling ChakraCore..")
 # Embed ChakraCore
 set(CHAKRACORE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/deps/ChakraCore")
 include(ChakraCoreEmbed.cmake)
 
+message ("-- Compiling libuv...")
+#Embed libuv
+include(libuv.cmake)
+include_directories(deps/libuv/include)
+
+message ("-- Compiling ion...")
 # main
 set(ION_INCLUDE_PATH src)
 include_directories(${ION_INCLUDE_PATH})
@@ -31,4 +38,5 @@ target_include_directories (ion
 
 target_link_libraries (ion
   ${CHAKRACORE_LINKER_OPTIONS} # add ChakraCore linker options
+  uv
   )

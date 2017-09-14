@@ -33,7 +33,7 @@ namespace runtime{
         JsValueRef globalObject;
         FAIL_CHECK(JsGetGlobalObject(&globalObject));
 
-        ION_DEFINLE(globalObject, "global" ,global);                                            
+        ion_define(globalObject, "global" ,global);                                            
 
         ion::core::process::Init(global);
 
