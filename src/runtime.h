@@ -8,6 +8,7 @@
 #include "ion.h"
 #include "env.h"
 #include "process.h"
+#include "timer.h"
 
 namespace ion {
 namespace core{
@@ -16,17 +17,14 @@ namespace runtime{
   class Runtime {
     public:
       Runtime() {
-        FAIL_CHECK(JsCreateRuntime(JsRuntimeAttributeNone, nullptr, &runtime));
-        FAIL_CHECK(JsCreateContext(runtime, &context));
-        FAIL_CHECK(JsSetCurrentContext(context));
-        currentSourceContext = 0;
+        this->CreateRuntime();
       }
 
       ~Runtime() {
         Exit();
       }
 
-      void Init(int argc, char** argv) {
+      napi_status Init(int argc, char** argv) {
         JsValueRef global;
         FAIL_CHECK(JsCreateObject(&global));
 
@@ -36,12 +34,13 @@ namespace runtime{
         ion_define(globalObject, "global" ,global);                                            
 
         ion::core::process::Init(global);
+        ion::core::timer::Init(global);
 
         DefineHostCallback(global, "Debug", ion::core::env::Debug, nullptr);
-
+        return napi_ok;
       }
 
-      JsValueRef RunScript(const char* source, std::string filename) {
+      napi_status RunScript(const char* source, std::string filename) {
         JsValueRef result;
         // std::vector<char> wrapper = WrapModule(source);
 
@@ -53,19 +52,46 @@ namespace runtime{
 
         FAIL_CHECK(JsRun(src, this->currentSourceContext++, sourceUrl, JsParseScriptAttributeNone, &result));
 
-        return result;
+        return napi_ok;
       }
 
-      void Exit() {
+      napi_status Exit() {
         FAIL_CHECK(JsSetCurrentContext(JS_INVALID_REFERENCE));
         FAIL_CHECK(JsDisposeRuntime(runtime));
+        return napi_ok;
+      }
+
+      bool HasError() {
+        bool hasException;
+        JsHasException(&hasException);
+        return hasException;
+      }
+
+      static napi_status GetException() {
+        JsValueRef exception;
+        FAIL_CHECK(JsGetAndClearExceptionWithMetadata(&exception));
+        JsPropertyIdRef sourceProperty;
+        FAIL_CHECK(JsCreatePropertyId("source", 6, &sourceProperty));
+
+        JsValueRef stackInfo;
+        FAIL_CHECK(JsGetProperty(exception, sourceProperty, &stackInfo));
+        // log error
+
+        JsValueRef arg[] = {nullptr, stackInfo};
+        env::Debug(nullptr, false, arg, 2, nullptr);
+        return napi_ok;
       }
 
     private:
+      napi_status CreateRuntime() {
+        FAIL_CHECK(JsCreateRuntime(JsRuntimeAttributeNone, nullptr, &runtime));
+        FAIL_CHECK(JsCreateContext(runtime, &context));
+        FAIL_CHECK(JsSetCurrentContext(context));
+        currentSourceContext = 0;
+        return napi_ok;
+      }
+
       std::vector<char> WrapModule(std::vector<char> source) {
-        std::string wrap_header = "(function (__filename, __dirname) {";
-        std::string wrap_tail = "})";
-        
         // source.insert(wrap_tail.begin(), wrap_tail.length(),source.size());
         return source;
       }
@@ -74,12 +100,12 @@ namespace runtime{
       {
         JsPropertyIdRef propertyId;
 
-        FAIL_CHECK(JsCreatePropertyId(callbackName.c_str(), callbackName.length(), &propertyId));
+        JsCreatePropertyId(callbackName.c_str(), callbackName.length(), &propertyId);
       
         JsValueRef function;
-        FAIL_CHECK(JsCreateFunction(callback, callbackState, &function));
+        JsCreateFunction(callback, callbackState, &function);
 
-        FAIL_CHECK(JsSetProperty(globalObject, propertyId, function, true));
+        JsSetProperty(globalObject, propertyId, function, true);
       
         return JsNoError;
       }

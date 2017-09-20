@@ -3,6 +3,7 @@
 #include "ion.h"
 #include "uv.h"
 
+typedef struct napi_callback_info__ *napi_callback_info;
 
 namespace ion {
 namespace core {
@@ -21,6 +22,7 @@ namespace process
     ion_define(process, "env", env);
 
   }
+
   
   void Init(JsValueRef env) {
     CreateEnv(env);

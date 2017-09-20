@@ -1,3 +1,6 @@
+#ifndef ION_ENV
+#define ION_ENV
+
 #include "ChakraCore.h"
 #include "ion.h"
 #include <vector>
@@ -16,15 +19,15 @@ namespace env {
 			}
 
 			JsValueRef stringValue;
-			FAIL_CHECK(JsConvertValueToString(arguments[index], &stringValue));
+			JsConvertValueToString(arguments[index], &stringValue);
 
 			// get string length
 			int length;
-			FAIL_CHECK(JsGetStringLength(stringValue, &length));
+			JsGetStringLength(stringValue, &length);
 
 			std::vector<char> buff(length+1);
 			size_t outputLength;
-			FAIL_CHECK(JsCopyString(stringValue, buff.data(), length, &outputLength));
+			JsCopyString(stringValue, buff.data(), length, &outputLength);
 			printf("%s", buff.data());
 		}
 		printf("\n");
@@ -32,3 +35,5 @@ namespace env {
   }
   
 }}}
+
+#endif // ! 

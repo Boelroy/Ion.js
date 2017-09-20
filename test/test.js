@@ -1,4 +1,9 @@
 (function() {
+  try {
+sss
+  } catch (e){
+    console.log(e.stack)
+  }
   var i = 0;
   var j = 1;
   // global._console("sss")

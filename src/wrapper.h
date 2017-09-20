@@ -13,7 +13,9 @@ typedef enum {
   napi_function_expected,
   napi_number_expected,
   napi_boolean_expected,
-  napi_name_expected
+  napi_name_expected,
+  napi_pending_exception,
+  napi_generic_failure
 } napi_status;
 
 typedef struct {
