@@ -4,7 +4,9 @@ toy node.js copy using ChakraCore as JS enginee
 
 ## RoadMap
 - [ ] process object
-- [x] timer
+- [x] Timer
+    - [x] setTimeout  clearTimeout
+    - [x] setInterval clearInterval
 - [ ] File modules
 - [ ] HTTP modules
 - [ ] Module System
