@@ -28,8 +28,3 @@ function clearTimeout(timer) {
 };
 
 var clearInterval = clearTimeout;
-
-
-setInterval(function() {
-  console.log('sss');
-}, 1000)
