@@ -18,6 +18,7 @@ if(WIN32)
   set(SOURCES ${SOURCES}
     ${LIBUVDIR}/src/win/async.c
     ${LIBUVDIR}/src/win/core.c
+    ${LIBUVDIR}/src/win/detect-wakeup.c
     ${LIBUVDIR}/src/win/dl.c
     ${LIBUVDIR}/src/win/error.c
     ${LIBUVDIR}/src/win/fs-event.c
@@ -25,7 +26,6 @@ if(WIN32)
     ${LIBUVDIR}/src/win/getaddrinfo.c
     ${LIBUVDIR}/src/win/getnameinfo.c
     ${LIBUVDIR}/src/win/handle.c
-    ${LIBUVDIR}/src/win/loop-watcher.c
     ${LIBUVDIR}/src/win/pipe.c
     ${LIBUVDIR}/src/win/poll.c
     ${LIBUVDIR}/src/win/process-stdio.c
@@ -35,7 +35,6 @@ if(WIN32)
     ${LIBUVDIR}/src/win/stream.c
     ${LIBUVDIR}/src/win/tcp.c
     ${LIBUVDIR}/src/win/thread.c
-    ${LIBUVDIR}/src/win/timer.c
     ${LIBUVDIR}/src/win/tty.c
     ${LIBUVDIR}/src/win/udp.c
     ${LIBUVDIR}/src/win/util.c
