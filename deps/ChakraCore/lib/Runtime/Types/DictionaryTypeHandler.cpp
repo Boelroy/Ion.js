@@ -1856,6 +1856,9 @@ namespace Js
             {
                 if (descriptor->IsAccessor && !(attributes & PropertyLetConstGlobal))
                 {
+#if DEBUG
+                    Var ctor = JavascriptOperators::GetProperty(instance, PropertyIds::constructor, scriptContext);
+#endif
                     AssertMsg(RootObjectBase::Is(instance) || JavascriptFunction::IsBuiltinProperty(instance, propertyId) ||
                         // ValidateAndApplyPropertyDescriptor says to preserve Configurable and Enumerable flags
 
@@ -1867,7 +1870,7 @@ namespace Js
                         // something else.  All we need to do is convert the descriptor to a data descriptor.
                         // Built-in Function.prototype properties 'length', 'arguments', and 'caller' are special cases.
 
-                        (JavascriptOperators::IsClassConstructor(JavascriptOperators::GetProperty(instance, PropertyIds::constructor, scriptContext)) &&
+                        ((JavascriptOperators::IsClassConstructor(ctor) || JavascriptOperators::IsClassMethod(ctor)) &&
                             (attributes & PropertyClassMemberDefaults) == PropertyClassMemberDefaults),
                         // 14.3.9: InitClassMember sets property descriptor to {writable:true, enumerable:false, configurable:true}
 
@@ -2014,7 +2017,7 @@ namespace Js
     template <typename T>
     Var DictionaryTypeHandlerBase<T>::CanonicalizeAccessor(Var accessor, /*const*/ JavascriptLibrary* library)
     {
-        if (accessor == nullptr || JavascriptOperators::IsUndefinedObject(accessor, library))
+        if (accessor == nullptr || JavascriptOperators::IsUndefinedObject(accessor))
         {
             accessor = library->GetDefaultAccessorFunction();
         }
@@ -2907,6 +2910,42 @@ namespace Js
         TTDAssert(false, "We found this and not accessor but NoBigSlot for index?");
         return Js::Constants::NoBigSlot;
     }
+#endif
+
+#if DBG_DUMP
+    template<typename T> void DictionaryTypeHandlerBase<T>::Dump(unsigned indent) const {
+        const auto padding(_u(""));
+        const unsigned fieldIndent(indent + 2);
+        const unsigned mapLabelIndent(indent + 4);
+        const unsigned mapValueIndent(indent + 6);
+
+        Output::Print(_u("%*sDictionaryTypeHandlerBase (0x%p):\n"), indent, padding, this);
+        DynamicTypeHandler::Dump(indent + 2);
+        if (this->propertyMap == nullptr)
+        {
+            Output::Print(_u("%*spropertyMap: <null>\n"), fieldIndent, padding);
+        }
+        else
+        {
+            Output::Print(_u("%*spropertyMap: 0x%p\n"), fieldIndent, padding, static_cast<void*>(this->propertyMap));
+            this->propertyMap->Map([&](const PropertyRecord *key, const DictionaryPropertyDescriptor<T> &value)
+            {
+                Output::Print(_u("%*sKey:\n"), mapLabelIndent, padding);
+                if (key == nullptr)
+                {
+                    Output::Print(_u("%*s<null>\n"), mapValueIndent, padding);
+                }
+                else
+                {
+                    key->Dump(mapValueIndent);
+                }
+                Output::Print(_u("%*sValue\n"), mapLabelIndent, padding);
+                value.Dump(mapValueIndent);
+            });
+        }
+        Output::Print(_u("%*snextPropertyIndex: %d\n"), fieldIndent, padding, static_cast<int32>(this->nextPropertyIndex));
+    }
+
 #endif
 
     template class DictionaryTypeHandlerBase<PropertyIndex>;

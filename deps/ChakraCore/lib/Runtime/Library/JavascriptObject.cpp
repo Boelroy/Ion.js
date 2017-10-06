@@ -304,7 +304,7 @@ namespace Js
             dynamicObject = RecyclableObject::FromVar(static_cast<Js::GlobalObject*>(dynamicObject)->ToThis());
         }
 
-        while (JavascriptOperators::GetTypeId(value) != TypeIds_Null)
+        while (!JavascriptOperators::IsNull(value))
         {
             value = JavascriptOperators::GetPrototype(value);
             if (dynamicObject == value)
@@ -365,23 +365,19 @@ namespace Js
         // 1. If the this value is undefined, return "[object Undefined]".
         if (type == TypeIds_Undefined)
         {
-            return library->CreateStringFromCppLiteral(_u("[object Undefined]"));
+            return library->GetObjectUndefinedDisplayString();
         }
         // 2. If the this value is null, return "[object Null]".
         if (type == TypeIds_Null)
         {
-            return library->CreateStringFromCppLiteral(_u("[object Null]"));
+            return library->GetObjectNullDisplayString();
         }
 
         // 3. Let O be ToObject(this value).
         RecyclableObject *thisArgAsObject = RecyclableObject::FromVar(JavascriptOperators::ToObject(thisArg, scriptContext));
 
-        // 4. Let isArray be ? IsArray(O).
-        // There is an implicit check for a null proxy handler in IsArray, so use the operator.
-        BOOL isArray = JavascriptOperators::IsArray(thisArgAsObject);
-
         // 15. Let tag be ? Get(O, @@toStringTag).
-        Var tag = JavascriptOperators::GetProperty(thisArgAsObject, PropertyIds::_symbolToStringTag, scriptContext); // Let tag be the result of Get(O, @@toStringTag).
+        Var tag = JavascriptOperators::GetPropertyNoCache(thisArgAsObject, PropertyIds::_symbolToStringTag, scriptContext); // Let tag be the result of Get(O, @@toStringTag).
 
         // 17. Return the String that is the result of concatenating "[object ", tag, and "]".
         auto buildToString = [&scriptContext](Var tag) {
@@ -401,6 +397,10 @@ namespace Js
         {
             return buildToString(tag);
         }
+
+        // 4. Let isArray be ? IsArray(O).
+        // There is an implicit check for a null proxy handler in IsArray, so use the operator.
+        BOOL isArray = JavascriptOperators::IsArray(thisArgAsObject);
 
         // If we don't have a tag or it's not a string, use the 'built in tag'.
         if (isArray)
@@ -536,11 +536,8 @@ namespace Js
 
         AssertMsg(args.Info.Count > 0, "Should always have implicit 'this'");
 
-        TypeId argType = JavascriptOperators::GetTypeId(args[0]);
-
         // throw a TypeError if TypeId is null or undefined, and apply ToObject to the 'this' value otherwise.
-
-        if ((argType == TypeIds_Null) || (argType == TypeIds_Undefined))
+        if (JavascriptOperators::IsUndefinedOrNull(args[0]))
         {
             JavascriptError::ThrowTypeError(scriptContext, JSERR_This_NullOrUndefined, _u("Object.prototype.valueOf"));
         }
@@ -1040,6 +1037,7 @@ namespace Js
                 if (propertyDescriptor.IsEnumerable())
                 {
                     Var value = JavascriptOperators::GetProperty(object, propertyId, scriptContext);
+
                     if (!valuesToReturn)
                     {
                         // For Object.entries each entry is key, value pair
@@ -1168,7 +1166,7 @@ namespace Js
                 }
                 if (includeStringProperties)
                 {
-                    newArr->DirectSetItemAt(propertyIndex++, CrossSite::MarshalVar(scriptContext, propertyName));
+                    newArr->DirectSetItemAt(propertyIndex++, CrossSite::MarshalVar(scriptContext, propertyName, propertyName->GetScriptContext()));
                 }
             }
         }
@@ -1486,14 +1484,14 @@ namespace Js
             //          ii.ReturnIfAbrupt(from).
             //          iii.Let keys be from.[[OwnPropertyKeys]]().
             //          iv.ReturnIfAbrupt(keys).
-            if (JavascriptOperators::IsUndefinedOrNull(args[i]))
-            {
-                continue;
-            }
 
             RecyclableObject* from = nullptr;
             if (!JavascriptConversion::ToObject(args[i], scriptContext, &from))
             {
+                if (JavascriptOperators::IsUndefinedOrNull(args[i]))
+                {
+                    continue;
+                }
                 JavascriptError::ThrowTypeError(scriptContext, JSERR_FunctionArgument_NeedObject, _u("Object.assign"));
             }
 
@@ -1522,7 +1520,7 @@ namespace Js
         JavascriptStaticEnumerator enumerator;
         if (!from->GetEnumerator(&enumerator, EnumeratorFlags::SnapShotSemantics | EnumeratorFlags::EnumSymbols, scriptContext))
         {
-            //nothing to enumerate, continue with the nextSource.
+            // Nothing to enumerate, continue with the nextSource.
             return;
         }
 
@@ -1530,7 +1528,7 @@ namespace Js
         Var propValue = nullptr;
         JavascriptString * propertyName = nullptr;
 
-        //enumerate through each property of properties and fetch the property descriptor
+        // Enumerate through each property of properties and fetch the property descriptor
         while ((propertyName = enumerator.MoveAndGetNext(nextKey)) != NULL)
         {
             if (nextKey == Constants::NoProperty)
@@ -1540,15 +1538,29 @@ namespace Js
                 scriptContext->GetOrAddPropertyRecord(propertyName->GetString(), propertyName->GetLength(), &propertyRecord);
                 nextKey = propertyRecord->GetPropertyId();
             }
+            PropertyString * propertyString = PropertyString::TryFromVar(propertyName);
 
-            if (!JavascriptOperators::GetOwnProperty(from, nextKey, &propValue, scriptContext))
+
+            // If propertyName is a PropertyString* we can try getting the property from the inline cache to avoid having a full property lookup
+            //
+            // Whenever possible, our enumerator populates the cache, so we should generally get a cache hit here
+            PropertyValueInfo getPropertyInfo;
+            if (propertyString == nullptr || !propertyString->TryGetPropertyFromCache<true /* OwnPropertyOnly */>(from, from, &propValue, scriptContext, &getPropertyInfo))
             {
-                JavascriptError::ThrowTypeError(scriptContext, JSERR_Operand_Invalid_NeedObject, _u("Object.assign"));
+                if (!JavascriptOperators::GetOwnProperty(from, nextKey, &propValue, scriptContext, &getPropertyInfo))
+                {
+                    JavascriptError::ThrowTypeError(scriptContext, JSERR_Operand_Invalid_NeedObject, _u("Object.assign"));
+                }
             }
 
-            if (!JavascriptOperators::SetProperty(to, to, nextKey, propValue, scriptContext, PropertyOperationFlags::PropertyOperation_ThrowIfNonWritable))
+            // Similarly, try to set the property using our cache to avoid having to do the full work of SetProperty
+            PropertyValueInfo setPropertyInfo;
+            if (propertyString == nullptr || !propertyString->TrySetPropertyFromCache(to, propValue, scriptContext, PropertyOperation_ThrowIfNonWritable, &setPropertyInfo))
             {
-                JavascriptError::ThrowTypeError(scriptContext, JSERR_Operand_Invalid_NeedObject, _u("Object.assign"));
+                if (!JavascriptOperators::SetProperty(to, to, nextKey, propValue, &setPropertyInfo, scriptContext, PropertyOperation_ThrowIfNonWritable))
+                {
+                    JavascriptError::ThrowTypeError(scriptContext, JSERR_Operand_Invalid_NeedObject, _u("Object.assign"));
+                }
             }
         }
     }
@@ -1583,7 +1595,7 @@ namespace Js
             {
                 if (propertyDescriptor.IsEnumerable())
                 {
-                    if (!JavascriptOperators::GetOwnProperty(from, propertyId, &propValue, scriptContext))
+                    if (!JavascriptOperators::GetOwnProperty(from, propertyId, &propValue, scriptContext, nullptr))
                     {
                         JavascriptError::ThrowTypeError(scriptContext, JSERR_Operand_Invalid_NeedObject, _u("Object.assign"));
                     }
@@ -1694,7 +1706,7 @@ namespace Js
             }
             else
             {
-                propertyRecord = scriptContext->GetPropertyName(propId);
+                propertyRecord = ((PropertyString*)propertyName)->GetPropertyRecord();
             }
 
             if (descCount == descSize)
@@ -1711,7 +1723,7 @@ namespace Js
                 descriptors = temp;
             }
 
-            Var tempVar = JavascriptOperators::GetProperty(props, propId, scriptContext);
+            Var tempVar = JavascriptOperators::GetPropertyNoCache(props, propId, scriptContext);
 
             AnalysisAssert(descCount < descSize);
             if (!JavascriptOperators::ToPropertyDescriptor(tempVar, &descriptors[descCount].descriptor, scriptContext))

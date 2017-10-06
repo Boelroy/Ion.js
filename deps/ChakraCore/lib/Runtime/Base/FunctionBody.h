@@ -7,6 +7,9 @@
 #include "AuxPtrs.h"
 #include "CompactCounters.h"
 
+// Where should I include this file?
+#include "FunctionExecutionStateMachine.h"
+
 struct CodeGenWorkItem;
 class SourceContextInfo;
 struct DeferredFunctionStub;
@@ -1724,13 +1727,16 @@ namespace Js
         void SetIsAsmjsMode(bool value)
         {
             m_isAsmjsMode = value;
-    #if DBG
+#if DBG
             if (value)
             {
                 m_wasEverAsmjsMode = true;
             }
-    #endif
+#endif
         }
+#if DBG
+        bool WasEverAsmJsMode() const { return m_wasEverAsmjsMode; }
+#endif
 
         void SetIsWasmFunction(bool val)
         {
@@ -1965,6 +1971,9 @@ namespace Js
 
         // Indicates if the function has been reparsed for debug attach/detach scenario.
         FieldWithBarrier(bool) m_reparsed : 1;
+#if DBG
+        FieldWithBarrier(bool) m_wasEverAsmjsMode : 1; // has m_isAsmjsMode ever been true
+#endif
 
         // This field is not required for deferred parsing but because our thunks can't handle offsets > 128 bytes
         // yet, leaving this here for now. We can look at optimizing the function info and function proxy structures some
@@ -1993,7 +2002,6 @@ namespace Js
 
     public:
 #if DBG
-        FieldWithBarrier(bool) m_wasEverAsmjsMode; // has m_isAsmjsMode ever been true
         FieldWithBarrier(Js::LocalFunctionId) deferredParseNextFunctionId;
 #endif
 #if DBG
@@ -2342,10 +2350,6 @@ namespace Js
         FieldWithBarrier(bool) m_canDoStackNestedFunc : 1;
 #endif
 
-#if DBG
-        FieldWithBarrier(bool) initializedExecutionModeAndLimits : 1;
-#endif
-
 #ifdef IR_VIEWER
         // whether IR Dump is enabled for this function (used by parseIR)
         FieldWithBarrier(bool) m_isIRDumpEnabled : 1;
@@ -2357,21 +2361,11 @@ namespace Js
 
         FieldWithBarrier(byte) inlineDepth; // Used by inlining to avoid recursively inlining functions excessively
 
-        FieldWithBarrier(ExecutionMode) executionMode;
-        FieldWithBarrier(uint16) interpreterLimit;
-        FieldWithBarrier(uint16) autoProfilingInterpreter0Limit;
-        FieldWithBarrier(uint16) profilingInterpreter0Limit;
-        FieldWithBarrier(uint16) autoProfilingInterpreter1Limit;
-        FieldWithBarrier(uint16) simpleJitLimit;
-        FieldWithBarrier(uint16) profilingInterpreter1Limit;
-        FieldWithBarrier(uint16) fullJitThreshold;
-        FieldWithBarrier(uint16) fullJitRequeueThreshold;
-        FieldWithBarrier(uint16) committedProfiledIterations;
+        FieldWithBarrier(FunctionExecutionStateMachine) executionState;
 
-        FieldWithBarrier(uint) m_depth; // Indicates how many times the function has been entered (so increases by one on each recursive call, decreases by one when we're done)
+        // Indicates how many times the function has been entered (so increases by one on each recursive call, decreases by one when we're done)
+        FieldWithBarrier(uint) m_depth;
 
-        FieldWithBarrier(uint32) interpretedCount;
-        FieldWithBarrier(uint32) lastInterpretedCount;
         FieldWithBarrier(uint32) loopInterpreterLimit;
         FieldWithBarrier(uint32) debuggerScopeIndex;
         FieldWithBarrier(uint32) savedPolymorphicCacheState;
@@ -2528,9 +2522,8 @@ namespace Js
         bool HasCachedScopePropIds() const { return hasCachedScopePropIds; }
         void SetHasCachedScopePropIds(bool has) { hasCachedScopePropIds = has; }
 
-        uint32 GetInterpretedCount() const { return interpretedCount; }
-        uint32 SetInterpretedCount(uint32 val) { return interpretedCount = val; }
-        uint32 IncreaseInterpretedCount() { return interpretedCount++; }
+        uint32 GetInterpretedCount() const;
+        uint32 IncreaseInterpretedCount();
 
         uint32 GetLoopInterpreterLimit() const { return loopInterpreterLimit; }
         uint32 SetLoopInterpreterLimit(uint32 val) { return loopInterpreterLimit = val; }
@@ -2606,9 +2599,6 @@ namespace Js
         FunctionEntryPointInfo *GetSimpleJitEntryPointInfo() const;
         void SetSimpleJitEntryPointInfo(FunctionEntryPointInfo *const entryPointInfo);
 
-    private:
-        void VerifyExecutionMode(const ExecutionMode executionMode) const;
-    public:
         ExecutionMode GetDefaultInterpreterExecutionMode() const;
         ExecutionMode GetExecutionMode() const;
         ExecutionMode GetInterpreterExecutionMode(const bool isPostBailout);
@@ -2624,15 +2614,7 @@ namespace Js
         void TransitionToSimpleJitExecutionMode();
         void TransitionToFullJitExecutionMode();
 
-    private:
-        void VerifyExecutionModeLimits();
-        void InitializeExecutionModeAndLimits();
-    public:
         void ReinitializeExecutionModeAndLimits();
-    private:
-        void SetFullJitThreshold(const uint16 newFullJitThreshold, const bool skipSimpleJit = false);
-        void CommitExecutedIterations();
-        void CommitExecutedIterations(uint16 &limit, const uint executedIterations);
 
     private:
         uint16 GetSimpleJitExecutedIterations() const;
@@ -2657,8 +2639,6 @@ namespace Js
         bool DoSimpleJit() const;
         bool DoSimpleJitWithLock() const;
         bool DoSimpleJitDynamicProfile() const;
-
-    private:
         bool DoInterpreterProfile() const;
         bool DoInterpreterProfileWithLock() const;
         bool DoInterpreterAutoProfile() const;

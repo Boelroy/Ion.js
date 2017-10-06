@@ -153,7 +153,7 @@ while [[ $# -gt 0 ]]; do
         ;;
 
     -v | --verbose)
-        _VERBOSE="V=1"
+        _VERBOSE="VERBOSE=1"
         ;;
 
     -d | --debug)
@@ -521,6 +521,7 @@ BUILD_RELATIVE_DIRECTORY=$(python -c "import os.path;print \
 ################# Write-barrier check/analyze run #################
 WB_FLAG=
 WB_TARGET=
+
 if [[ $WB_CHECK || $WB_ANALYZE ]]; then
     # build software write barrier checker clang plugin
     $CHAKRACORE_DIR/tools/RecyclerChecker/build.sh --cxx=$_CXX || exit 1

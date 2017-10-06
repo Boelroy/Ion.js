@@ -104,7 +104,7 @@ Opnd::IsWriteBarrierTriggerableValue()
     }
 
     // If this operand is known address, then it doesn't need a write barrier, the address is either not a GC address or is pinned
-    if (this->IsAddrOpnd() && static_cast<AddrOpndKind>(this->AsAddrOpnd()->GetKind()) == AddrOpndKindDynamicVar)
+    if (this->IsAddrOpnd() && this->AsAddrOpnd()->GetAddrOpndKind() == AddrOpndKindDynamicVar)
     {
         return false;
     }
@@ -1093,9 +1093,15 @@ void RegOpnd::Initialize(StackSym *sym, RegNum reg, IRType type)
 ///----------------------------------------------------------------------------
 
 RegOpnd *
-    RegOpnd::New(IRType type, Func *func)
+RegOpnd::New(IRType type, Func *func)
 {
     return RegOpnd::New(StackSym::New(type, func), RegNOREG, type, func);
+}
+
+IR::RegOpnd *
+RegOpnd::New(RegNum reg, IRType type, Func *func)
+{
+    return RegOpnd::New(StackSym::New(type, func), reg, type, func);
 }
 
 RegOpnd *
@@ -1103,14 +1109,6 @@ RegOpnd::New(StackSym *sym, IRType type, Func *func)
 {
     return RegOpnd::New(sym, RegNOREG, type, func);
 }
-
-///----------------------------------------------------------------------------
-///
-/// RegOpnd::New
-///
-///     Creates a new RegOpnd.
-///
-///----------------------------------------------------------------------------
 
 RegOpnd *
 RegOpnd::New(StackSym *sym, RegNum reg, IRType type, Func *func)
@@ -1616,7 +1614,7 @@ void Int64ConstOpnd::FreeInternal(Func * func)
 ///----------------------------------------------------------------------------
 
 RegBVOpnd *
-RegBVOpnd::New(BVUnit32 value, IRType type, Func *func)
+RegBVOpnd::New(BVUnit value, IRType type, Func *func)
 {
     RegBVOpnd * regBVOpnd;
 

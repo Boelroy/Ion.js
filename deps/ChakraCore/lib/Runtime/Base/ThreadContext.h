@@ -84,12 +84,6 @@ protected:
     bool isDisabled;
 };
 
-// This function is called before we step out of script (currently only for WinRT callout).
-// Debugger would put a breakpoint on this function if they want to detect the point at which we step
-// over the boundary.
-// It is intentionally left blank and the next operation should be the callout.
-extern "C" void* MarkerForExternalDebugStep();
-
 #define PROBE_STACK(scriptContext, size) ((scriptContext)->GetThreadContext()->ProbeStack(size, scriptContext))
 #define PROBE_STACK_NO_DISPOSE(scriptContext, size) ((scriptContext)->GetThreadContext()->ProbeStackNoDispose(size, scriptContext))
 #define PROBE_STACK_PARTIAL_INITIALIZED_INTERPRETER_FRAME(scriptContext, size) ((scriptContext)->GetThreadContext()->ProbeStack(size, scriptContext, _ReturnAddress()))
@@ -425,7 +419,28 @@ public:
 #endif
 #endif
 
+public:
+    Js::PropertyRecord const * GetEmptyStringPropertyRecord()
+    {
+        if (!emptyStringPropertyRecord)
+        {
+            emptyStringPropertyRecord = propertyMap->LookupWithKey(Js::HashedCharacterBuffer<char16>(_u(""), 0));
+            if (emptyStringPropertyRecord == nullptr)
+            {
+                emptyStringPropertyRecord = this->UncheckedAddPropertyId(_u(""), 0, true);
+            }
+        }
+        return emptyStringPropertyRecord;
+    }
+
+    Js::PropertyId GetEmptyStringPropertyId()
+    {
+        return GetEmptyStringPropertyRecord()->GetPropertyId();
+    }
+
 private:
+    const Js::PropertyRecord * emptyStringPropertyRecord;
+
     Js::JavascriptExceptionObject * pendingFinallyException;
     bool noScriptScope;
 
@@ -734,7 +749,7 @@ private:
     DListBase<Js::EntryPointInfo *> equivalentTypeCacheEntryPoints;
 
     typedef SList<Js::InlineCache*> InlineCacheList;
-    typedef JsUtil::BaseDictionary<Js::PropertyId, InlineCacheList*, ArenaAllocator> InlineCacheListMapByPropertyId;
+    typedef JsUtil::BaseDictionary<Js::PropertyId, InlineCacheList*, ArenaAllocator, PrimeSizePolicy> InlineCacheListMapByPropertyId;
     InlineCacheListMapByPropertyId protoInlineCacheByPropId;
     InlineCacheListMapByPropertyId storeFieldInlineCacheByPropId;
 
@@ -744,7 +759,7 @@ private:
     uint totalUnregisteredCacheCount;
 #endif
 
-    typedef JsUtil::BaseDictionary<Js::Var, Js::IsInstInlineCache*, ArenaAllocator> IsInstInlineCacheListMapByFunction;
+    typedef JsUtil::BaseDictionary<Js::Var, Js::IsInstInlineCache*, ArenaAllocator, PrimeSizePolicy> IsInstInlineCacheListMapByFunction;
     IsInstInlineCacheListMapByFunction isInstInlineCacheByFunction;
 
     Js::IsConcatSpreadableCache isConcatSpreadableCache;
@@ -811,7 +826,7 @@ private:
     bool isScriptActive;
 
     // When ETW rundown in background thread which needs to walk scriptContext/functionBody/entryPoint lists,
-    // or when JIT thread is getting auxPtrs from function body, we should not be modifying the list of 
+    // or when JIT thread is getting auxPtrs from function body, we should not be modifying the list of
     // functionBody/entrypoints, or expanding the auxPtrs
     CriticalSection csFunctionBody;
 
@@ -1795,7 +1810,7 @@ private:
 extern void(*InitializeAdditionalProperties)(ThreadContext *threadContext);
 
 // This is for protecting a region of code, where we can't recover and be consistent upon failures (mainly due to OOM and SO).
-// FailFast on that. 
+// FailFast on that.
 class AutoDisableInterrupt
 {
 public:
