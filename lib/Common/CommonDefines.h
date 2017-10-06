@@ -109,6 +109,7 @@
 #if !defined(CHAKRACORE_LITE) && (defined(_WIN32) || defined(INTL_ICU))
 #define ENABLE_INTL_OBJECT                          // Intl support
 #endif
+//#define INTL_ICU 1                    // NOTE: uncomment this to allow the IDE to see INTL_ICU blocks
 #ifdef INTL_ICU
 #ifdef DBG
 //#define INTL_ICU_DEBUG 1              // NOTE: uncomment this to display INTL_ICU-specific debug output
@@ -285,7 +286,8 @@
 // Other features
 // #define CHAKRA_CORE_DOWN_COMPAT 1
 
-#ifdef _WIN32
+// todo:: Enable vectorcall on NTBUILD. OS#13609380
+#if defined(_WIN32) && !defined(NTBUILD) && defined(_M_IX86)
 #define VECTORCALL __vectorcall
 #else
 #define VECTORCALL

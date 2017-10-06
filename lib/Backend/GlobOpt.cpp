@@ -1577,6 +1577,7 @@ GlobOpt::OptArguments(IR::Instr *instr)
 
     if (instr->HasAnyLoadHeapArgsOpCode())
     {
+#ifdef ENABLE_DEBUG_CONFIG_OPTIONS
         if (instr->m_func->IsStackArgsEnabled())
         {
             if (instr->GetSrc1()->IsRegOpnd() && instr->m_func->GetJITFunctionBody()->GetInParamsCount() > 1)
@@ -1593,6 +1594,7 @@ GlobOpt::OptArguments(IR::Instr *instr)
                 }
             }
         }
+#endif
 
         if (instr->m_func->GetJITFunctionBody()->GetInParamsCount() != 1 && !instr->m_func->IsStackArgsEnabled())
         {
@@ -2632,11 +2634,8 @@ GlobOpt::OptInstr(IR::Instr *&instr, bool* isInstrRemoved)
     }
 
     // Track calls after any pre-op bailouts have been inserted before the call, because they will need to restore out params.
-    // We don't inline in asmjs and hence we don't need to track calls in asmjs too, skipping this step for asmjs.
-    if (!GetIsAsmJSFunc())
-    {
-        this->TrackCalls(instr);
-    }
+
+    this->TrackCalls(instr);
 
     if (instr->GetSrc1())
     {
@@ -6771,17 +6770,13 @@ GlobOpt::OptConstFoldBranch(IR::Instr *instr, Value *src1Val, Value*src2Val, Val
         // this path would probably work outside of asm.js, but we should verify that if we ever hit this scenario
         Assert(GetIsAsmJSFunc());
         constVal = 0;
-        if (src1Val->GetValueInfo()->TryGetIntConstantValue(&constVal) && constVal != 0)
+        if (!src1Val->GetValueInfo()->TryGetIntConstantValue(&constVal))
         {
-            instr->FreeSrc1();
-            if (instr->GetSrc2())
-            {
-                instr->FreeSrc2();
-            }
-            instr->m_opcode = Js::OpCode::Nop;
-            return true;
+            return false;
         }
-        return false;
+
+        result = constVal == 0;
+        break;
 
     default:
         return false;
@@ -12033,8 +12028,7 @@ GlobOpt::ToTypeSpecUse(IR::Instr *instr, IR::Opnd *opnd, BasicBlock *block, Valu
             else
             {
                 varSym = block->globOptData.GetCopyPropSym(nullptr, val);
-                // If there is no float 64 type specialized sym for this - create a new sym.
-                if(!varSym || !block->globOptData.IsFloat64TypeSpecialized(varSym))
+                if(!varSym)
                 {
                     // Clear the symstore to ensure it's set below to this new symbol
                     this->SetSymStoreDirect(val->GetValueInfo(), nullptr);
@@ -17668,7 +17662,8 @@ GlobOpt::ProcessExceptionHandlingEdges(IR::Instr* instr)
 void
 GlobOpt::InsertToVarAtDefInTryRegion(IR::Instr * instr, IR::Opnd * dstOpnd)
 {
-    if (this->currentRegion->GetType() == RegionTypeTry && dstOpnd->IsRegOpnd() && dstOpnd->AsRegOpnd()->m_sym->HasByteCodeRegSlot())
+    if ((this->currentRegion->GetType() == RegionTypeTry || this->currentRegion->GetType() == RegionTypeFinally) &&
+        dstOpnd->IsRegOpnd() && dstOpnd->AsRegOpnd()->m_sym->HasByteCodeRegSlot())
     {
         StackSym * sym = dstOpnd->AsRegOpnd()->m_sym;
         if (sym->IsVar())
@@ -17677,7 +17672,8 @@ GlobOpt::InsertToVarAtDefInTryRegion(IR::Instr * instr, IR::Opnd * dstOpnd)
         }
 
         StackSym * varSym = sym->GetVarEquivSym(nullptr);
-        if (this->currentRegion->writeThroughSymbolsSet->Test(varSym->m_id))
+        if ((this->currentRegion->GetType() == RegionTypeTry && this->currentRegion->writeThroughSymbolsSet->Test(varSym->m_id)) ||
+            ((this->currentRegion->GetType() == RegionTypeFinally && this->currentRegion->GetMatchingTryRegion()->writeThroughSymbolsSet->Test(varSym->m_id))))
         {
             IR::RegOpnd * regOpnd = IR::RegOpnd::New(varSym, IRType::TyVar, instr->m_func);
             this->ToVar(instr->m_next, regOpnd, this->currentBlock, NULL, false);

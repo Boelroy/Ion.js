@@ -55,17 +55,6 @@ void DefaultInitializeAdditionalProperties(ThreadContext *threadContext)
  */
 void (*InitializeAdditionalProperties)(ThreadContext *threadContext) = DefaultInitializeAdditionalProperties;
 
-// To make sure the marker function doesn't get inlined, optimized away, or merged with other functions we disable optimization.
-// If this method ends up causing a perf problem in the future, we should replace it with asm versions which should be lighter.
-#pragma optimize("g", off)
-_NOINLINE extern "C" void* MarkerForExternalDebugStep()
-{
-    // We need to return something here to prevent this function from being merged with other empty functions by the linker.
-    static int __dummy;
-    return &__dummy;
-}
-#pragma optimize("", on)
-
 CriticalSection ThreadContext::s_csThreadContext;
 size_t ThreadContext::processNativeCodeSize = 0;
 ThreadContext * ThreadContext::globalListFirst = nullptr;
@@ -157,9 +146,9 @@ ThreadContext::ThreadContext(AllocationPolicyManager * allocationPolicyManager, 
     isInstInlineCacheThreadInfoAllocator(_u("TC-IsInstInlineCacheInfo"), GetPageAllocator(), Js::Throw::OutOfMemory),
     equivalentTypeCacheInfoAllocator(_u("TC-EquivalentTypeCacheInfo"), GetPageAllocator(), Js::Throw::OutOfMemory),
     preReservedVirtualAllocator(),
-    protoInlineCacheByPropId(&inlineCacheThreadInfoAllocator, 512),
-    storeFieldInlineCacheByPropId(&inlineCacheThreadInfoAllocator, 256),
-    isInstInlineCacheByFunction(&isInstInlineCacheThreadInfoAllocator, 128),
+    protoInlineCacheByPropId(&inlineCacheThreadInfoAllocator, 521),
+    storeFieldInlineCacheByPropId(&inlineCacheThreadInfoAllocator, 293),
+    isInstInlineCacheByFunction(&isInstInlineCacheThreadInfoAllocator, 131),
     registeredInlineCacheCount(0),
     unregisteredInlineCacheCount(0),
     prototypeChainEnsuredToHaveOnlyWritableDataPropertiesAllocator(_u("TC-ProtoWritableProp"), GetPageAllocator(), Js::Throw::OutOfMemory),
@@ -218,6 +207,7 @@ ThreadContext::ThreadContext(AllocationPolicyManager * allocationPolicyManager, 
 #if ENABLE_JS_REENTRANCY_CHECK
     , noJsReentrancy(false)
 #endif
+    , emptyStringPropertyRecord(nullptr)
 {
     pendingProjectionContextCloseList = JsUtil::List<IProjectionContext*, ArenaAllocator>::New(GetThreadAlloc());
     hostScriptContextStack = Anew(GetThreadAlloc(), JsUtil::Stack<HostScriptContext*>, GetThreadAlloc());
@@ -919,19 +909,23 @@ ThreadContext::IsNumericProperty(Js::PropertyId propertyId)
 const Js::PropertyRecord *
 ThreadContext::FindPropertyRecord(const char16 * propertyName, int propertyNameLength)
 {
-    Js::PropertyRecord const * propertyRecord = nullptr;
-
-    if (IsDirectPropertyName(propertyName, propertyNameLength))
+    // IsDirectPropertyName == 1 char properties && GetEmptyStringPropertyRecord == 0 length
+    if (propertyNameLength < 2)
     {
-        propertyRecord = propertyNamesDirect[propertyName[0]];
-        Assert(propertyRecord == propertyMap->LookupWithKey(Js::HashedCharacterBuffer<char16>(propertyName, propertyNameLength)));
-    }
-    else
-    {
-        propertyRecord = propertyMap->LookupWithKey(Js::HashedCharacterBuffer<char16>(propertyName, propertyNameLength));
+        if (propertyNameLength == 0)
+        {
+            return this->GetEmptyStringPropertyRecord();
+        }
+
+        if (IsDirectPropertyName(propertyName, propertyNameLength))
+        {
+            Js::PropertyRecord const * propertyRecord = propertyNamesDirect[propertyName[0]];
+            Assert(propertyRecord == propertyMap->LookupWithKey(Js::HashedCharacterBuffer<char16>(propertyName, propertyNameLength)));
+            return propertyRecord;
+        }
     }
 
-    return propertyRecord;
+    return propertyMap->LookupWithKey(Js::HashedCharacterBuffer<char16>(propertyName, propertyNameLength));
 }
 
 Js::PropertyRecord const *
@@ -1092,7 +1086,7 @@ ThreadContext::AddPropertyRecordInternal(const Js::PropertyRecord * propertyReco
 #if DBG
     // Only Assert we can't find the property if we are not adding a symbol.
     // For a symbol, the propertyName is not used and may collide with something in the map already.
-    if (!propertyRecord->IsSymbol())
+    if (propertyNameLength > 0 && !propertyRecord->IsSymbol())
     {
         Assert(FindPropertyRecord(propertyName, propertyNameLength) == nullptr);
     }
@@ -1141,7 +1135,7 @@ ThreadContext::AddPropertyRecordInternal(const Js::PropertyRecord * propertyReco
 #if DBG
     // Only Assert we can find the property if we are not adding a symbol.
     // For a symbol, the propertyName is not used and we won't be able to look the pid up via name.
-    if (!propertyRecord->IsSymbol())
+    if (propertyNameLength && !propertyRecord->IsSymbol())
     {
         Assert(FindPropertyRecord(propertyName, propertyNameLength) == propertyRecord);
     }
@@ -1239,6 +1233,11 @@ void ThreadContext::AddBuiltInPropertyRecord(const Js::PropertyRecord *propertyR
 
 BOOL ThreadContext::IsNumericPropertyId(Js::PropertyId propertyId, uint32* value)
 {
+    if (Js::IsInternalPropertyId(propertyId))
+    {
+        return false;
+    }
+
     Js::PropertyRecord const * propertyRecord = this->GetPropertyName(propertyId);
     Assert(propertyRecord != nullptr);
     if (propertyRecord == nullptr || !propertyRecord->IsNumeric())

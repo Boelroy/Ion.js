@@ -241,6 +241,8 @@ namespace Js
         template <typename RegSlotType> void SetRegRawInt( RegSlotType localRegisterID, int bValue );
         template <typename RegSlotType> int64 GetRegRawInt64( RegSlotType localRegisterID ) const;
         template <typename RegSlotType> void SetRegRawInt64( RegSlotType localRegisterID, int64 bValue );
+        template <typename RegSlotType> void* GetRegRawPtr(RegSlotType localRegisterID) const;
+        template <typename RegSlotType> void SetRegRawPtr(RegSlotType localRegisterID, void* val);
         template <typename RegSlotType> double VECTORCALL GetRegRawDouble(RegSlotType localRegisterID) const;
         template <typename RegSlotType> float VECTORCALL GetRegRawFloat(RegSlotType localRegisterID) const;
         template <typename RegSlotType> void SetRegRawDouble(RegSlotType localRegisterID, double bValue);
@@ -330,8 +332,7 @@ namespace Js
         static int GetRetType(JavascriptFunction* func);
         static int GetAsmJsArgSize(AsmJsCallStackLayout * stack);
         static int GetDynamicRetType(AsmJsCallStackLayout * stack);
-        static DWORD GetAsmJsReturnValueOffset(AsmJsCallStackLayout * stack);
-        _NOINLINE   static int  AsmJsInterpreter(AsmJsCallStackLayout * stack);
+        _NOINLINE static void AsmJsInterpreter(AsmJsCallStackLayout * stack, byte* retDst);
 #elif _M_X64
         template <typename T>
         static T AsmJsInterpreter(AsmJsCallStackLayout* layout);
@@ -465,8 +466,11 @@ namespace Js
         void OP_StartCall( const unaligned OpLayoutStartCall * playout );
         void OP_StartCall(uint outParamCount);
         template <class T> void OP_CallCommon(const unaligned T *playout, RecyclableObject * aFunc, unsigned flags, const Js::AuxArray<uint32> *spreadIndices = nullptr);
-        void OP_CallAsmInternal( RecyclableObject * function);
-        template <class T> void OP_I_AsmCall(const unaligned T* playout) { OP_CallAsmInternal((ScriptFunction*)OP_CallGetFunc(GetRegAllowStackVar(playout->Function))); }
+        void OP_CallAsmInternalCommon(ScriptFunction* function, RegSlot returnReg);
+        void OP_CallAsmInternal(RegSlot funcReg, RegSlot returnReg);
+        template <class T> void OP_I_AsmCall(const unaligned T* playout) { OP_CallAsmInternal(playout->Function, playout->Return); }
+        void OP_ProfiledCallAsmInternal(RegSlot funcReg, RegSlot returnReg, ProfileId profileId);
+        template <class T> void OP_ProfiledI_AsmCall(const unaligned T* playout) { OP_ProfiledCallAsmInternal(playout->Function, playout->Return, playout->profileId); }
 
         template <class T> void OP_CallCommonI(const unaligned T *playout, RecyclableObject * aFunc, unsigned flags);
         template <class T> void OP_ProfileCallCommon(const unaligned T *playout, RecyclableObject * aFunc, unsigned flags, ProfileId profileId, InlineCacheIndex inlineCacheIndex = Js::Constants::NoInlineCacheIndex, const Js::AuxArray<uint32> *spreadIndices = nullptr);
@@ -659,7 +663,7 @@ namespace Js
         template <class T> inline void OP_CheckSignature(const unaligned T* playout);
         template<typename T> T GetArrayViewOverflowVal();
         template <typename ArrayType, typename RegType = ArrayType> inline void OP_StArr( uint32 index, RegSlot value );
-        template <class T> inline Var OP_LdAsmJsSlot(Var instance, const unaligned T* playout );
+        template <class T> inline void OP_LdAsmJsSlot(const unaligned T* playout );
         template <class T, typename T2> inline void OP_StSlotPrimitive(const unaligned T* playout);
         template <class T, typename T2> inline void OP_LdSlotPrimitive( const unaligned T* playout );
         template <class T> inline void OP_LdArrGeneric   ( const unaligned T* playout );
@@ -746,8 +750,6 @@ namespace Js
         template <class T> void OP_InitClass(const unaligned OpLayoutT_Class<T> * playout);
         inline Var OP_LdHomeObj(ScriptContext * scriptContext);
         inline Var OP_LdFuncObj(ScriptContext * scriptContext);
-        inline Var OP_ScopedLdHomeObj(ScriptContext * scriptContext);
-        inline Var OP_ScopedLdFuncObj(ScriptContext * scriptContext);
         template <typename T> void OP_LdElementUndefined(const unaligned OpLayoutT_ElementU<T>* playout);
         template <typename T> void OP_LdLocalElementUndefined(const unaligned OpLayoutT_ElementRootU<T>* playout);
         template <typename T> void OP_LdElementUndefinedScoped(const unaligned OpLayoutT_ElementScopedU<T>* playout);

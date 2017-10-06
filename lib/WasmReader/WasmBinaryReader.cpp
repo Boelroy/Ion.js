@@ -31,6 +31,7 @@ uint32 GetTypeByteSize(WasmType type)
     case I64: return sizeof(int64);
     case F32: return sizeof(float);
     case F64: return sizeof(double);
+    case Ptr: return sizeof(void*);
     default:
         Js::Throw::InternalError();
     }
@@ -213,6 +214,17 @@ SectionHeader WasmBinaryReader::ReadSectionHeader()
     return header;
 }
 
+#if ENABLE_DEBUG_CONFIG_OPTIONS
+Js::FunctionBody* WasmBinaryReader::GetFunctionBody() const
+{
+    if (m_readerState == READER_STATE_FUNCTION)
+    {
+        return m_funcState.body;
+    }
+    return nullptr;
+}
+#endif
+
 #if DBG_DUMP
 void WasmBinaryReader::PrintOps()
 {
@@ -243,6 +255,9 @@ void WasmBinaryReader::PrintOps()
             --j;
         }
     }
+
+    uint32 moduleId = m_module->GetWasmFunctionInfo(0)->GetBody()->GetSourceContextId();
+    Output::Print(_u("Module #%u's current opcode distribution\n"), moduleId);
     for (i = 0; i < count; ++i)
     {
         switch (ops[i])
@@ -304,10 +319,27 @@ void WasmBinaryReader::SeekToFunctionBody(class WasmFunctionInfo* funcInfo)
 
     // Seek to the function start and skip function header (count)
     m_pc = m_start + readerInfo.startOffset;
+
     m_funcState.size = readerInfo.size;
     m_funcState.count = 0;
     CheckBytesLeft(readerInfo.size);
     m_curFuncEnd = m_pc + m_funcState.size;
+#if ENABLE_DEBUG_CONFIG_OPTIONS
+    m_funcState.body = funcInfo->GetBody();
+    if (DO_WASM_TRACE_DECODER)
+    {
+        Output::Print(_u("Decoding "));
+        m_funcState.body->DumpFullFunctionName();
+        if (sizeof(intptr_t) == 8)
+        {
+            Output::Print(_u(": start = 0x%llx, end = 0x%llx, size = 0x%x\n"), (intptr_t)m_pc, (intptr_t)m_curFuncEnd, m_funcState.size);
+        }
+        else
+        {
+            Output::Print(_u(": start = 0x%x, end = 0x%x, size = 0x%x\n"), (intptr_t)m_pc, (intptr_t)m_curFuncEnd, m_funcState.size);
+        }
+    }
+#endif
 
     uint32 length = 0;
     uint32 numLocalsEntries = LEB128(length);
@@ -338,6 +370,9 @@ void WasmBinaryReader::SeekToFunctionBody(class WasmFunctionInfo* funcInfo)
 void WasmBinaryReader::FunctionEnd()
 {
     m_readerState = READER_STATE_UNKNOWN;
+#if ENABLE_DEBUG_CONFIG_OPTIONS
+    m_funcState.body = nullptr;
+#endif
 }
 
 bool WasmBinaryReader::IsCurrentFunctionCompleted() const
@@ -345,10 +380,18 @@ bool WasmBinaryReader::IsCurrentFunctionCompleted() const
     return m_pc == m_curFuncEnd;
 }
 
-WasmOp WasmBinaryReader::ReadExpr()
+WasmOp WasmBinaryReader::ReadOpCode()
 {
+    CheckBytesLeft(1);
     WasmOp op = m_currentNode.op = (WasmOp)*m_pc++;
     ++m_funcState.count;
+
+    return op;
+}
+
+WasmOp WasmBinaryReader::ReadExpr()
+{
+    WasmOp op = ReadOpCode();
 
     if (EndOfFunc())
     {
@@ -1155,19 +1198,6 @@ MaxAllowedType WasmBinaryReader::LEB128(uint32 &length, bool sgn)
             result |= -((int64)1 << shamt);
         }
     }
-
-    if (!sgn)
-    {
-        if (sizeof(MaxAllowedType) == 4)
-        {
-            TRACE_WASM_LEB128(_u("Binary decoder: LEB128 length = %u, value = %u (0x%x)"), length, result, result);
-        }
-        else if (sizeof(MaxAllowedType) == 8)
-        {
-            TRACE_WASM_LEB128(_u("Binary decoder: LEB128 length = %u, value = %llu (0x%llx)"), length, result, result);
-        }
-    }
-
     return result;
 }
 
@@ -1175,19 +1205,13 @@ MaxAllowedType WasmBinaryReader::LEB128(uint32 &length, bool sgn)
 template<>
 int32 WasmBinaryReader::SLEB128(uint32 &length)
 {
-    int32 result = LEB128<uint32>(length, true);
-
-    TRACE_WASM_LEB128(_u("Binary decoder: SLEB128 length = %u, value = %d (0x%x)"), length, result, result);
-    return result;
+    return LEB128<uint32>(length, true);
 }
 
 template<>
 int64 WasmBinaryReader::SLEB128(uint32 &length)
 {
-    int64 result = LEB128<uint64>(length, true);
-
-    TRACE_WASM_LEB128(_u("Binary decoder: SLEB128 length = %u, value = %lld (0x%llx)"), length, result, result);
-    return result;
+    return LEB128<uint64>(length, true);
 }
 
 WasmNode WasmBinaryReader::ReadInitExpr(bool isOffset)
@@ -1198,7 +1222,10 @@ WasmNode WasmBinaryReader::ReadInitExpr(bool isOffset)
     }
 
     m_funcState.count = 0;
-    m_funcState.size = m_currentSection.end - m_pc;
+    m_funcState.size = (uint32)(m_currentSection.end - m_pc);
+#if TARGET_64
+    Assert(m_pc + m_funcState.size == m_currentSection.end);
+#endif
     ReadExpr();
     WasmNode node = m_currentNode;
     switch (node.op)

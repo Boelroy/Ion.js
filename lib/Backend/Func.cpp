@@ -68,6 +68,7 @@ Func::Func(JitArenaAllocator *alloc, JITTimeWorkItem * workItem,
     m_canDoInlineArgsOpt(true),
     m_doFastPaths(false),
     hasBailout(false),
+    firstIRTemp(0),
     hasBailoutInEHRegion(false),
     hasInstrNumber(false),
     maintainByteCodeOffset(true),
@@ -78,7 +79,7 @@ Func::Func(JitArenaAllocator *alloc, JITTimeWorkItem * workItem,
     hasAnyStackNestedFunc(false),
     hasMarkTempObjects(false),
     postCallByteCodeOffset(postCallByteCodeOffset),
-    maxInlineeArgOutCount(0),
+    maxInlineeArgOutSize(0),
     returnValueRegSlot(returnValueRegSlot),
     firstActualStackOffset(-1),
     m_localVarSlotsOffset(Js::Constants::InvalidOffset),
@@ -744,19 +745,27 @@ void Func::SetFirstArgOffset(IR::Instr* inlineeStart)
     int32 lastOffset;
 
     IR::Instr* arg = inlineeStart->GetNextArg();
-    const auto lastArgOutStackSym = arg->GetDst()->AsSymOpnd()->m_sym->AsStackSym();
-    lastOffset = lastArgOutStackSym->m_offset;
-    Assert(lastArgOutStackSym->m_isSingleDef);
-    const auto secondLastArgOutOpnd = lastArgOutStackSym->m_instrDef->GetSrc2();
-    if (secondLastArgOutOpnd->IsSymOpnd())
+    if (arg)
     {
-        const auto secondLastOffset = secondLastArgOutOpnd->AsSymOpnd()->m_sym->AsStackSym()->m_offset;
-        if (secondLastOffset > lastOffset)
+        const auto lastArgOutStackSym = arg->GetDst()->AsSymOpnd()->m_sym->AsStackSym();
+        lastOffset = lastArgOutStackSym->m_offset;
+        Assert(lastArgOutStackSym->m_isSingleDef);
+        const auto secondLastArgOutOpnd = lastArgOutStackSym->m_instrDef->GetSrc2();
+        if (secondLastArgOutOpnd->IsSymOpnd())
         {
-            lastOffset = secondLastOffset;
+            const auto secondLastOffset = secondLastArgOutOpnd->AsSymOpnd()->m_sym->AsStackSym()->m_offset;
+            if (secondLastOffset > lastOffset)
+            {
+                lastOffset = secondLastOffset;
+            }
         }
+        lastOffset += MachPtr;
     }
-    lastOffset += MachPtr;
+    else
+    {
+        Assert(this->GetTopFunc()->GetJITFunctionBody()->IsAsmJsMode());
+        lastOffset = MachPtr;
+    }
     int32 firstActualStackOffset = lastOffset - ((this->actualCount + Js::Constants::InlineeMetaArgCount) * MachPtr);
     Assert((this->firstActualStackOffset == -1) || (this->firstActualStackOffset == firstActualStackOffset));
     this->firstActualStackOffset = firstActualStackOffset;
@@ -871,7 +880,11 @@ Func::SetDoFastPaths()
 #if LOWER_SPLIT_INT64
 Int64RegPair Func::FindOrCreateInt64Pair(IR::Opnd* opnd)
 {
-    AssertMsg(this->GetTopFunc()->currentPhases.Top() == Js::LowererPhase, "New Int64 sym map is only allowed during lower");
+    if (!this->IsTopFunc())
+    {
+        return GetTopFunc()->FindOrCreateInt64Pair(opnd);
+    }
+    AssertMsg(currentPhases.Top() == Js::LowererPhase, "New Int64 sym map is only allowed during lower");
     Int64RegPair pair;
     IRType pairType = opnd->GetType();
     if (opnd->IsInt64())
@@ -918,7 +931,7 @@ Int64RegPair Func::FindOrCreateInt64Pair(IR::Opnd* opnd)
             {
                 Js::ArgSlot slotNumber = stackSym->GetArgSlotNum();
                 symPair.low = StackSym::NewArgSlotSym(slotNumber, this, pairType);
-                symPair.high = StackSym::NewArgSlotSym(slotNumber + 1, this, pairType);
+                symPair.high = StackSym::NewArgSlotSym(slotNumber, this, pairType);
             }
             else
             {
@@ -954,6 +967,11 @@ Int64RegPair Func::FindOrCreateInt64Pair(IR::Opnd* opnd)
 
 void Func::Int64SplitExtendLoopLifetime(Loop* loop)
 {
+    if (!this->IsTopFunc())
+    {
+        GetTopFunc()->Int64SplitExtendLoopLifetime(loop);
+        return;
+    }
     if (m_int64SymPairMap)
     {
         BVSparse<JitArenaAllocator> *liveOnBackEdgeSyms = loop->regAlloc.liveOnBackEdgeSyms;
@@ -972,7 +990,8 @@ void Func::Int64SplitExtendLoopLifetime(Loop* loop)
 }
 #endif
 
-#ifdef _M_ARM
+// ToDo (SaAgarwa) Enabled GetLocalsPointer for AMR64 as well. Validate is the implementation correct for ARM64
+#if defined(_M_ARM32_OR_ARM64)
 
 RegNum
 Func::GetLocalsPointer() const
@@ -1363,11 +1382,11 @@ Func::EnsureLoopParamSym()
 }
 
 void
-Func::UpdateMaxInlineeArgOutCount(uint inlineeArgOutCount)
+Func::UpdateMaxInlineeArgOutSize(uint inlineeArgOutSize)
 {
-    if (maxInlineeArgOutCount < inlineeArgOutCount)
+    if (this->maxInlineeArgOutSize < inlineeArgOutSize)
     {
-        maxInlineeArgOutCount = inlineeArgOutCount;
+        this->maxInlineeArgOutSize = inlineeArgOutSize;
     }
 }
 

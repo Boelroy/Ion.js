@@ -69,10 +69,9 @@ public:
             IR::Instr *         LoadHeapArgsCached(IR::Instr * instr);
             IR::Instr *         LowerEntryInstr(IR::EntryInstr * entryInstr);
             IR::Instr *         LowerExitInstr(IR::ExitInstr * exitInstr);
-            IR::Instr *         LowerEntryInstrAsmJs(IR::EntryInstr * entryInstr);
             IR::Instr *         LowerExitInstrAsmJs(IR::ExitInstr * exitInstr);
             IR::ExitInstr *     LowerExitInstrCommon(IR::ExitInstr * exitInstr);
-            IR::Instr *         LowerInt64Assign(IR::Instr * instr);
+     static IR::Instr *         ChangeToAssignInt64(IR::Instr * instr);
             void                GeneratePrologueStackProbe(IR::Instr *entryInstr, size_t frameSize);
             void                EmitInt64Instr(IR::Instr *instr);
             void                LowerInt64Branch(IR::Instr *instr);
