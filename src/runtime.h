@@ -25,18 +25,16 @@ namespace runtime{
       }
 
       napi_status Init(int argc, char** argv) {
-        JsValueRef global;
-        FAIL_CHECK(JsCreateObject(&global));
 
         JsValueRef globalObject;
         FAIL_CHECK(JsGetGlobalObject(&globalObject));
 
-        ion_define(globalObject, "global" ,global);                                            
+        ion_define(globalObject, "global" ,globalObject);                                            
 
-        ion::core::process::Init(global);
-        ion::core::timer::Init(global);
+        ion::core::process::Init(globalObject);
+        ion::core::timer::Init(globalObject);
 
-        DefineHostCallback(global, "Debug", ion::core::env::Debug, nullptr);
+        DefineHostCallback(globalObject, "Debug", ion::core::env::Debug, nullptr);
         return napi_ok;
       }
 
