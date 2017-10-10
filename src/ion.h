@@ -107,6 +107,12 @@ napi_status ion_create_array(napi_value *ref) {
   return napi_ok;
 }
 
+napi_status ion_create_string_utf8(napi_value *value, const char* str) {
+	size_t length = strlen(str);
+	FAIL_CHECK(JsCreateString(str, length, value));
+	return napi_ok;
+}
+
 napi_status ion_set_array_at_index(napi_value array, int index, napi_value value) {
   napi_value _interger;
   FAIL_CHECK(JsIntToNumber(index, &_interger));
