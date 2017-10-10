@@ -28,5 +28,3 @@ function clearTimeout(timer) {
 };
 
 var clearInterval = clearTimeout;
-
-console.log("ss");

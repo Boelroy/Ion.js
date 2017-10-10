@@ -9,7 +9,11 @@
 namespace ion {
 namespace core {
 namespace env {
-  JsValueRef Debug(JsValueRef callee, bool isConstructCall, JsValueRef *arguments, unsigned short argumentCount, void *callbackState)
+  JsValueRef
+#ifdef WIN32
+  CALLBACK
+#endif
+  Debug(JsValueRef callee, bool isConstructCall, JsValueRef *arguments, unsigned short argumentCount, void *callbackState)
   {
 		for(unsigned int index = 1; index < argumentCount; index++)
 		{
