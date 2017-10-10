@@ -9,29 +9,39 @@ namespace ion {
 namespace core {
 namespace process
 {
-  static void CreateEnv(JsValueRef global) {
+  static void DefineArgs(JsValueRef process, int argc, char** argv) {
+    napi_value js_argv;
+    ion_create_array(&js_argv);
+  }
+
+  static void CreateEnv(JsValueRef global, int argc, char** argv) {
     napi_value process;
     ion_create_object(&process);
 
     napi_value env;
     ion_create_object(&env);
 
+#ifdef WIN32
+    char buf[MAX_PATH];
+#else
+
     char buf[PATH_MAX];
+#endif
     size_t cwd_len = sizeof(buf);
     int err = uv_cwd(buf, &cwd_len);
     if (err)
       buf[0] = '\0';
     ion_define_string_utf8(env, "PWD", buf);
 
+    DefineArgs(process, argc, argv);
 
     ion_define(process, "env", env);
 
-    ion_define(global, 'process', process);
+    ion_define(global, "process", process);
   }
 
-  
-  void Init(JsValueRef env) {
-    CreateEnv(env);
-  }  
+  void Init(JsValueRef env, int argc, char** argv) {
+    CreateEnv(env, argc, argv);
+  }
 }}}
 

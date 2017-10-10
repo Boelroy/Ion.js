@@ -102,6 +102,18 @@ napi_status ion_create_object(napi_value *ref) {
   return napi_ok;
 }
 
+napi_status ion_create_array(napi_value *ref) {
+  FAIL_CHECK(JsCreateArray(0, ref));
+  return napi_ok;
+}
+
+napi_status ion_set_array_at_index(napi_value array, int index, napi_value value) {
+  napi_value _interger;
+  FAIL_CHECK(JsIntToNumber(index, &_interger));
+  FAIL_CHECK(JsSetIndexedProperty(array, _interger, value));
+  return napi_ok;
+}
+
 napi_status ion_create_name_function(JsNativeFunction fn, const char* name, void* callBackStatus, JsValueRef *result) {
   napi_value fnName;
   FAIL_CHECK1(JsCreateString(name, strlen(name), &fnName));

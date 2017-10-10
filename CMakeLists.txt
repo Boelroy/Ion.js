@@ -21,7 +21,7 @@ include_directories(deps/libuv/include)
 message ("-- Compiling ion...")
 # main
 set(ION_INCLUDE_PATH src)
-include_directories(${ION_INCLUDE_PATH})
+
 add_executable(ion ${ION_INCLUDE_PATH}/ion.cc
   ${ION_INCLUDE_PATH}/env.h
   ${ION_INCLUDE_PATH}/ion.h
@@ -29,6 +29,7 @@ add_executable(ion ${ION_INCLUDE_PATH}/ion.cc
   ${ION_INCLUDE_PATH}/utils.h
   ${ION_INCLUDE_PATH}/natives.h
   ${ION_INCLUDE_PATH}/timer.h
+  ${ION_INCLUDE_PATH}/process.h
   ${ION_INCLUDE_PATH}/bootstrap_ion.js)
 
 target_include_directories (ion
@@ -36,8 +37,9 @@ target_include_directories (ion
   ${ION_INCLUDE_PATH}
   ${CHAKRACORE_INCLUDE_PATH} # add ChakraCore include path
   )
-
+target_link_libraries (ion
+  uv # add ChakraCore linker options
+  )
 target_link_libraries (ion
   ${CHAKRACORE_LINKER_OPTIONS} # add ChakraCore linker options
-  uv
   )

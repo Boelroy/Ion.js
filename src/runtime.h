@@ -31,7 +31,7 @@ namespace runtime{
 
         ion_define(globalObject, "global" ,globalObject);                                            
 
-        ion::core::process::Init(globalObject);
+        ion::core::process::Init(globalObject, argc, argv);
         ion::core::timer::Init(globalObject);
 
         DefineHostCallback(globalObject, "Debug", ion::core::env::Debug, nullptr);
