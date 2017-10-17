@@ -5,10 +5,11 @@
 #include <iostream>
 
 #include "ChakraCore.h"
-#include "ion.h"
-#include "env.h"
-#include "process.h"
-#include "timer.h"
+#include <ion.h>
+#include <env.h>
+#include <process.h>
+#include <timer.h>
+#include <fs.h>
 
 namespace ion {
 namespace core{
@@ -33,8 +34,10 @@ namespace runtime{
 
         ion::core::process::Init(globalObject, argc, argv);
         ion::core::timer::Init(globalObject);
+        ion::core::fs::Init(globalObject);
 
         DefineHostCallback(globalObject, "Debug", ion::core::env::Debug, nullptr);
+        DefineHostCallback(globalObject, "Compile", Compile, nullptr);
         return napi_ok;
       }
 
@@ -78,6 +81,17 @@ namespace runtime{
         JsValueRef arg[] = {nullptr, stackInfo};
         env::Debug(nullptr, false, arg, 2, nullptr);
         return napi_ok;
+      }
+
+      static napi_value Compile(napi_value callle, bool isConstructCall, napi_value *arguments, unsigned short argumentCount, void *callbackState) {
+        napi_value result;
+        napi_value src = arguments[1];
+        napi_value sourceUrl = arguments[2];
+        JsErrorCode errCode = JsRun(src, 0, sourceUrl, JsParseScriptAttributeNone, &result);
+        if (errCode != JsNoError) {
+          GetException();
+        }
+        return result;
       }
 
     private:

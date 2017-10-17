@@ -12,11 +12,12 @@ namespace process
   static void DefineArgs(JsValueRef process, int argc, char** argv) {
     napi_value js_argv;
     ion_create_array(&js_argv);
-	for (int i = 0; i < argc; i++) {
-		napi_value str;
-		ion_create_string_utf8(&str, argv[i]);
-		ion_set_array_at_index(js_argv, i, str);
-	}
+    for (int i = 0; i < argc; i++) {
+      napi_value str;
+      ion_create_string_utf8(&str, argv[i]);
+      ion_set_array_at_index(js_argv, i, str);
+    }
+    ion_define(process, "argv", js_argv);
   }
 
   static void CreateEnv(JsValueRef global, int argc, char** argv) {

@@ -28,3 +28,7 @@ function clearTimeout(timer) {
 };
 
 var clearInterval = clearTimeout;
+// fs.open(process.argv[1], fs.constants.O_RDONLY,0,function(fd) {
+//   fs.write
+// })
+fs.write(1,"sss", -1);

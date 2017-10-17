@@ -11,5 +11,11 @@ toy node.js copy using ChakraCore as JS enginee
     - [x] setTimeout  clearTimeout
     - [x] setInterval clearInterval
 - [ ] File modules
+    - [x] open
+    - [x] read
+    - [x] write
+    - [ ] rmdir
+    - [ ] stat
+    - [ ] unlink 
 - [ ] HTTP modules
 - [ ] Module System

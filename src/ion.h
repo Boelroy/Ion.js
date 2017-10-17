@@ -3,6 +3,7 @@
 
 #include <cstring>
 #include <stdio.h>
+#include <string>
 #include "ChakraCore.h"
 #include "wrapper.h"
 
@@ -51,8 +52,8 @@ do                                                 \
    JsErrorCode errCode = cmd;                      \
    if (errCode != JsNoError)                       \
    {                                               \
-     printf("Error %d at '%s' \n", errCode, #cmd); \
-    ion_set_last_error(errCode);                   \
+      printf("Error %d at '%s' \n", errCode, #cmd);\
+      ion_set_last_error(errCode);                 \
    }                                               \
 } while(0)
 
@@ -63,6 +64,14 @@ do                                                   \
   JsValueRef function;                              \
   ion_create_function(callback, nullptr, &function);\
   ion_define(proto, name, function);            \
+} while(0)
+
+#define ION_SET_METHOD(object, name, callback) \
+do                                                   \
+{                                                    \
+  JsValueRef function;                              \
+  ion_create_function(callback, nullptr, &function);\
+  ion_define(object, name, function);            \
 } while(0)
 
 void ion_define(napi_value target, const char* name, napi_value prop)                     
@@ -130,6 +139,17 @@ napi_status ion_create_name_function(JsNativeFunction fn, const char* name, void
 napi_status ion_create_function(JsNativeFunction fn, void* callBackStatus, JsValueRef *result) {
   FAIL_CHECK(JsCreateFunction(fn, callBackStatus, result));
   return napi_ok;
+}
+
+std::string ion_get_string(JsValueRef jsStr) {
+  int length;
+	JsGetStringLength(jsStr, &length);
+
+	char str[length+1];
+	size_t outputLength;
+  JsCopyString(jsStr, str, length, &outputLength);
+  str[length] = '\0';
+  return std::string(str);
 }
 
 #endif
