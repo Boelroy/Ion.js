@@ -318,4 +318,9 @@ def JS2C(source, target):
 
 if __name__ == '__main__':
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    JS2C([dir_path+"/src/bootstrap_ion.js"], [dir_path+"/src/natives.h"])
+    src = map(lambda x : dir_path+x, [
+      "/src/bootstrap_ion.js",
+      "/src/module.js",
+      "/src/fs.js"
+    ])
+    JS2C(src, [dir_path+"/src/natives.h"])

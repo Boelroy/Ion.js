@@ -10,6 +10,7 @@
 #include <process.h>
 #include <timer.h>
 #include <fs.h>
+#include <vm.h>
 
 namespace ion {
 namespace core{
@@ -26,6 +27,10 @@ namespace runtime{
       }
 
       napi_status Init(int argc, char** argv) {
+        env::Environment* env = new env::Environment(uv_default_loop(), "test");
+        JsContextRef currentContext;
+        JsGetCurrentContext(&currentContext);
+				JsSetContextData(currentContext, env);
 
         JsValueRef globalObject;
         FAIL_CHECK(JsGetGlobalObject(&globalObject));
@@ -35,6 +40,7 @@ namespace runtime{
         ion::core::process::Init(globalObject, argc, argv);
         ion::core::timer::Init(globalObject);
         ion::core::fs::Init(globalObject);
+        ion::core::vm::Init(globalObject);
 
         DefineHostCallback(globalObject, "Debug", ion::core::env::Debug, nullptr);
         DefineHostCallback(globalObject, "Compile", Compile, nullptr);

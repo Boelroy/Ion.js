@@ -27,6 +27,7 @@ add_executable(ion ${ION_INCLUDE_PATH}/ion.cc
   ${ION_INCLUDE_PATH}/ion.h
   ${ION_INCLUDE_PATH}/runtime.h
   ${ION_INCLUDE_PATH}/utils.h
+  ${ION_INCLUDE_PATH}/vm.h
   ${ION_INCLUDE_PATH}/natives.h
   ${ION_INCLUDE_PATH}/timer.h
   ${ION_INCLUDE_PATH}/process.h

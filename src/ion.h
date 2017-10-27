@@ -1,9 +1,10 @@
 #ifndef ION_ION_H
 #define ION_ION_H
 
-#include <cstring>
 #include <stdio.h>
 #include <string>
+#include <cstring>
+#include <vector>
 #include "ChakraCore.h"
 #include "wrapper.h"
 
@@ -73,6 +74,8 @@ do                                                   \
   ion_create_function(callback, nullptr, &function);\
   ion_define(object, name, function);            \
 } while(0)
+
+#define ION_FUNCTION(name) napi_value name(napi_value callee, bool isConstructCall, napi_value *arguments, unsigned short argumentCount, void *callbackState)
 
 void ion_define(napi_value target, const char* name, napi_value prop)                     
 {                                                         
@@ -145,11 +148,12 @@ std::string ion_get_string(JsValueRef jsStr) {
   int length;
 	JsGetStringLength(jsStr, &length);
 
-	char str[length+1];
+  std::vector<char> str;
+  str.resize(length + 1);
 	size_t outputLength;
-  JsCopyString(jsStr, str, length, &outputLength);
+  JsCopyString(jsStr, str.data(), length, &outputLength);
   str[length] = '\0';
-  return std::string(str);
+  return std::string(&str[0]);
 }
 
 #endif

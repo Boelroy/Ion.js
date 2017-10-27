@@ -5,13 +5,42 @@
 #include "ChakraCore.h"
 #include "iostream"
 #include <uv.h>
+#include <vector>
 #include <fcntl.h>
+#include <env.h>
+#include <cstring>
+#include <req-wrap.h>
 
 namespace ion{
 namespace core{
 namespace fs{
-    
+
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
+
+static char getbuf[PATH_MAX + 1];
+
+
+class FSReqWrap: public ReqWrap<uv_fs_t> {
+public:
+	FSReqWrap(napi_value callback):
+		ReqWrap(),
+		callback_(callback) {}
+	~FSReqWrap() {
+		uv_fs_req_cleanup(req_);
+	}
+	napi_value callback() {
+		return callback_;
+	}
+private:
+	napi_value callback_;
+};
+
+
 #define ion_define_constants(object, constant) ion_define_int(object, #constant, constant);
+
+static uv_loop_t *event_loop;
 
 void DefineConstants(napi_value fs) {
 	napi_value constants;
@@ -46,69 +75,114 @@ void DefineConstants(napi_value fs) {
 	ion_define(fs, "constants", constants);
 }
 
-void
-AfterOpen(uv_fs_t *req) {
-	napi_value callback = static_cast<napi_value>(req->data);
+void After(uv_fs_t *req) {
+	FSReqWrap *fs_req_wrap = static_cast<FSReqWrap*>(req->data);
+	napi_value callback = fs_req_wrap->callback();
+	JsValueRef argv[6];
+	int argc = 1;
+	if (req->result > 0) {
+		switch(req->fs_type) {
+			case UV_FS_CLOSE:
+				break;
+			case UV_FS_OPEN:
+				JsIntToNumber(req->result, argv + 1);
+				argc = 2;
+				break;
+			case UV_FS_READ:
+				break;
+			default:
+			perror("unhandle uv ops");
+		}
+	} else {
 
-	JsValueRef argv[2];
-
-  JsGetUndefinedValue(argv);
-	JsIntToNumber(req->result, argv + 1);
+	}
+	
+	JsGetUndefinedValue(argv);
 	JsValueRef result;
+	FAIL_CHECK1(JsCallFunction(callback, argv, argc, &result));
 
-  FAIL_CHECK1(JsCallFunction(callback, argv, 2, &result));
+	delete fs_req_wrap;
 }
 
-napi_value 
-Open(napi_value callee, bool isConstructCall, napi_value *arguments, unsigned short argumentCount, void *callbackState){
-	uv_fs_t req;
-	req.data = arguments[argumentCount - 1];
+ION_FUNCTION(Open) {
+	napi_value callback = arguments[argumentCount - 1];
+	FSReqWrap *reqwrap = new FSReqWrap(callback);
+	JsValueRef undefinedValue;
+	JsGetUndefinedValue(&undefinedValue);
+
+	reqwrap->req()->data = reqwrap;
 
 	int flags, mode;
   JsNumberToInt(arguments[3], &mode);
 	JsNumberToInt(arguments[2], &flags);
-	
-	std::string path = ion_get_string(arguments[1]);
 
-	uv_fs_open(uv_default_loop(), &req, path.data(), flags, mode, AfterOpen);
-	JsValueRef undefinedValue;
-  JsGetUndefinedValue(&undefinedValue);
-	return undefinedValue;
+	strcpy(getbuf, ion_get_string(arguments[1]).c_str());
+	bool result;
+	JsEquals(callback, undefinedValue, &result);
+	if (!result) {
+		uv_fs_open(reqwrap->env()->event_loop(), reqwrap->req(), getbuf, flags, mode, After);
+		return undefinedValue;
+	}
+	int error = uv_fs_open(reqwrap->env()->event_loop(), reqwrap->req(), getbuf, flags, mode, nullptr);
+	int fd_ = error;
+	if (error == 0) {
+		fd_ = reqwrap->req()->result;
+	}
+	delete reqwrap;
+	napi_value fd;
+	JsIntToNumber(fd_, &fd);
+	return fd;
 }
 
-napi_value
-Close(napi_value callle, bool isConstructCall, napi_value *arguments, unsigned short argumentCount, void *callbackState) {
-	JsValueRef undefinedValue;
-  JsGetUndefinedValue(&undefinedValue);
-	return undefinedValue;
-}
-
-napi_value
-Read(napi_value callle, bool isConstructCall, napi_value *arguments, unsigned short argumentCount, void *callbackState) {
+ION_FUNCTION(Close){
 	int fd;
-	std::string src;
-	uv_fs_t req;
-
-	void* base = malloc(4096);
-	if (base == nullptr) {
-		perror("can not malloc");
-		exit(0);
-	}
+	napi_value callback = arguments[argumentCount - 1];
 	JsNumberToInt(arguments[1], &fd);
-	
-	uv_buf_t buf = uv_buf_init(static_cast<char*>(base), 4096);
-	uv_fs_read(uv_default_loop(), &req, fd, &buf, 1, 0, nullptr);
-	while(req.result > 0) {
-		src += std::string(static_cast<char*>(buf.base), req.result);
-		uv_fs_read(uv_default_loop(), &req, fd, &buf, 1, src.length(), nullptr);
+	JsValueRef undefinedValue;
+	JsGetUndefinedValue(&undefinedValue);
+
+	FSReqWrap *reqwrap = new FSReqWrap(arguments[argumentCount - 1]);
+	reqwrap->req()->data = reqwrap;
+
+	bool result;
+	JsEquals(callback, undefinedValue, &result);
+	if (!result) {
+		uv_fs_close(reqwrap->env()->event_loop(), reqwrap->req(), fd, After);
+	} else {
+		uv_fs_close(reqwrap->env()->event_loop(), reqwrap->req(), fd, nullptr);
 	}
+
+	return undefinedValue;
+}
+
+ION_FUNCTION(Read){
+	int fd;
+	JsNumberToInt(arguments[1], &fd);
+
+	std::vector<char> chars;
+	int64_t offset = 0;
+	const size_t kBlockSize = 4096;
+	ssize_t numchars;
+
+	do {
+		const size_t start = chars.size();
+		chars.resize(start + kBlockSize);
+		uv_buf_t buf;
+		buf.base = &chars[start];
+		buf.len = kBlockSize;
+
+		uv_fs_t read_req;
+		numchars = uv_fs_read(uv_default_loop(), &read_req, fd, &buf, 1, offset, nullptr);
+		offset+=numchars;
+	} while(static_cast<size_t>(numchars) == kBlockSize);
+	std::string result = std::string(&chars[0]);
 	napi_value str;
-	JsCreateString(src.c_str(), src.length(), &str);
+	JsCreateString(result.data(), result.length(), &str);
+
 	return str;
 }
 
-napi_value
-Write(napi_value callle, bool isConstructCall, napi_value *arguments, unsigned short argumentCount, void *callbackState) {
+ION_FUNCTION(Write){
 	int fd;
 	JsNumberToInt(arguments[1], &fd);
 	uv_fs_t req;
@@ -116,7 +190,7 @@ Write(napi_value callle, bool isConstructCall, napi_value *arguments, unsigned s
 	JsNumberToInt(arguments[3], &pos);
 	std::string content = ion_get_string(arguments[2]);
 
-	uv_buf_t buf = uv_buf_init(const_cast<char*>(content.c_str()), content.length());
+	uv_buf_t buf = uv_buf_init(const_cast<char*>(content.data()), content.length());
 	uv_fs_write(uv_default_loop(), &req, fd, &buf, 1, pos, nullptr);
 	JsValueRef undefinedValue;
   JsGetUndefinedValue(&undefinedValue);
@@ -129,6 +203,7 @@ void DefineMethod(napi_value fs) {
 	ION_SET_METHOD(fs, "read", Read);
 	ION_SET_METHOD(fs, "write", Write);
 }
+
 void Init(napi_value env) {
 	napi_value fs;
 	ion_create_object(&fs);
