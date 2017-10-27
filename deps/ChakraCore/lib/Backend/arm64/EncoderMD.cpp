@@ -4,6 +4,7 @@
 //-------------------------------------------------------------------------------------------------------
 #include "Backend.h"
 #include "ARM64Encoder.h"
+#include "ARM64NeonEncoder.h"
 #include "Language/JavascriptFunctionArgIndex.h"
 
 static const uint32 Opdope[] =
@@ -59,7 +60,7 @@ const BYTE
 EncoderMD::GetFloatRegEncode(IR::RegOpnd *regOpnd)
 {
     BYTE regEncode = GetRegEncode(regOpnd->GetReg());
-    AssertMsg(regEncode <= LAST_FLOAT_REG_NUM, "Impossible to allocate higher registers on VFP");
+    AssertMsg(regEncode <= LAST_FLOAT_REG_ENCODE, "Impossible to allocate higher registers on VFP");
     return regEncode;
 }
 
@@ -160,7 +161,7 @@ EncoderMD::DecodeMemoryOpnd(IR::Opnd* opnd, ARM64_REGISTER &baseRegResult, ARM64
         IR::SymOpnd *symOpnd = opnd->AsSymOpnd();
 
         this->BaseAndOffsetFromSym(symOpnd, &baseReg, &offset, this->m_func);
-        baseRegResult = baseReg;
+        baseRegResult = this->GetRegEncode(baseReg);
         return false;
     }
     else
@@ -244,6 +245,32 @@ int EncoderMD::EmitOp3Register(Arm64CodeEmitter &Emitter, IR::Instr* instr, _Reg
     else
     {
         return reg32(Emitter, this->GetRegEncode(dst->AsRegOpnd()), this->GetRegEncode(src1->AsRegOpnd()), this->GetRegEncode(src2->AsRegOpnd()));
+    }
+}
+
+template<typename _RegFunc32, typename _RegFunc64>
+int EncoderMD::EmitOp3RegisterShifted(Arm64CodeEmitter &Emitter, IR::Instr* instr, SHIFT_EXTEND_TYPE shiftType, int shiftAmount, _RegFunc32 reg32, _RegFunc64 reg64)
+{
+    IR::Opnd* dst = instr->GetDst();
+    IR::Opnd* src1 = instr->GetSrc1();
+    IR::Opnd* src2 = instr->GetSrc2();
+
+    Assert(dst->IsRegOpnd());
+    Assert(src1->IsRegOpnd());
+    Assert(src2->IsRegOpnd());
+
+    int size = dst->GetSize();
+    Assert(size == 4 || size == 8);
+    Assert(size == src1->GetSize());
+    Assert(size == src2->GetSize());
+
+    if (size == 8)
+    {
+        return reg64(Emitter, this->GetRegEncode(dst->AsRegOpnd()), this->GetRegEncode(src1->AsRegOpnd()), Arm64RegisterParam(this->GetRegEncode(src2->AsRegOpnd()), shiftType, shiftAmount & 63));
+    }
+    else
+    {
+        return reg32(Emitter, this->GetRegEncode(dst->AsRegOpnd()), this->GetRegEncode(src1->AsRegOpnd()), Arm64RegisterParam(this->GetRegEncode(src2->AsRegOpnd()), shiftType, shiftAmount & 31));
     }
 }
 
@@ -411,10 +438,50 @@ int EncoderMD::EmitConditionalBranch(Arm64CodeEmitter &Emitter, IR::Instr* instr
 }
 
 template<typename _Emitter, typename _Emitter64>
+int EncoderMD::EmitCompareAndBranch(Arm64CodeEmitter &Emitter, IR::Instr* instr, _Emitter emitter, _Emitter64 emitter64)
+{
+    IR::Opnd* src1 = instr->GetSrc1();
+    Assert(src1->IsRegOpnd());
+
+    int size = src1->GetSize();
+    Assert(size == 4 || size == 8);
+
+    ArmBranchLinker Linker;
+    EncodeReloc::New(&m_relocList, RelocTypeBranch19, m_pc, instr->AsBranchInstr()->GetTarget(), m_encoder->m_tempAlloc);
+    Linker.SetTarget(Emitter);
+
+    if (size == 8)
+    {
+        return emitter64(Emitter, this->GetRegEncode(src1->AsRegOpnd()), Linker);
+    }
+    else
+    {
+        return emitter(Emitter, this->GetRegEncode(src1->AsRegOpnd()), Linker);
+    }
+}
+
+template<typename _Emitter>
+int EncoderMD::EmitTestAndBranch(Arm64CodeEmitter &Emitter, IR::Instr* instr, _Emitter emitter)
+{
+    IR::Opnd* src1 = instr->GetSrc1();
+    IR::Opnd* src2 = instr->GetSrc2();
+    Assert(src1->IsRegOpnd());
+    Assert(src2->IsImmediateOpnd());
+
+    ArmBranchLinker Linker;
+    EncodeReloc::New(&m_relocList, RelocTypeBranch14, m_pc, instr->AsBranchInstr()->GetTarget(), m_encoder->m_tempAlloc);
+    Linker.SetTarget(Emitter);
+
+    int64 immediate = src2->GetImmediateValue(instr->m_func);
+    Assert(immediate >= 0 && immediate < 64);
+    return emitter(Emitter, this->GetRegEncode(src1->AsRegOpnd()), ULONG(immediate), Linker);
+}
+
+template<typename _Emitter, typename _Emitter64>
 int EncoderMD::EmitMovConstant(Arm64CodeEmitter &Emitter, IR::Instr *instr, _Emitter emitter, _Emitter64 emitter64)
 {
-    IR::Opnd*dst = instr->GetDst();
-    IR::Opnd*src1 = instr->GetSrc1();
+    IR::Opnd* dst = instr->GetDst();
+    IR::Opnd* src1 = instr->GetSrc1();
     Assert(dst->IsRegOpnd());
     Assert(src1->IsImmediateOpnd());
 
@@ -440,6 +507,188 @@ int EncoderMD::EmitMovConstant(Arm64CodeEmitter &Emitter, IR::Instr *instr, _Emi
     }
 }
 
+template<typename _Emitter, typename _Emitter64>
+int EncoderMD::EmitBitfield(Arm64CodeEmitter &Emitter, IR::Instr *instr, _Emitter emitter, _Emitter64 emitter64)
+{
+    IR::Opnd* dst = instr->GetDst();
+    IR::Opnd* src1 = instr->GetSrc1();
+    IR::Opnd* src2 = instr->GetSrc2();
+    Assert(dst->IsRegOpnd());
+    Assert(src1->IsRegOpnd());
+    Assert(src2->IsImmediateOpnd());
+
+    int size = dst->GetSize();
+    Assert(size == 4 || size == 8);
+    Assert(size == src1->GetSize());
+
+    IntConstType immediate = src2->GetImmediateValue(instr->m_func);
+    int start = immediate & 0x3f;
+    int length = (immediate >> 16) & 0x3f;
+    Assert(start >= 0 && start < 8 * size);
+    Assert(length >= 0 && length < 8 * size);
+
+    if (size == 8)
+    {
+        return emitter64(Emitter, this->GetRegEncode(dst->AsRegOpnd()), this->GetRegEncode(src1->AsRegOpnd()), start, length);
+    }
+    else
+    {
+        return emitter(Emitter, this->GetRegEncode(dst->AsRegOpnd()), this->GetRegEncode(src1->AsRegOpnd()), start, length);
+    }
+}
+
+template<typename _Emitter, typename _Emitter64>
+int EncoderMD::EmitConditionalSelect(Arm64CodeEmitter &Emitter, IR::Instr *instr, int condition, _Emitter emitter, _Emitter64 emitter64)
+{
+    IR::Opnd* dst = instr->GetDst();
+    IR::Opnd* src1 = instr->GetSrc1();
+    IR::Opnd* src2 = instr->GetSrc2();
+    Assert(dst->IsRegOpnd());
+    Assert(src1->IsRegOpnd());
+    Assert(src2->IsRegOpnd());
+
+    int size = dst->GetSize();
+    Assert(size == 4 || size == 8);
+    Assert(size == src1->GetSize());
+    Assert(size == src2->GetSize());
+
+    if (size == 8)
+    {
+        return emitter64(Emitter, this->GetRegEncode(dst->AsRegOpnd()), this->GetRegEncode(src1->AsRegOpnd()), this->GetRegEncode(src2->AsRegOpnd()), condition);
+    }
+    else
+    {
+        return emitter(Emitter, this->GetRegEncode(dst->AsRegOpnd()), this->GetRegEncode(src1->AsRegOpnd()), this->GetRegEncode(src2->AsRegOpnd()), condition);
+    }
+}
+
+template<typename _Emitter>
+int EncoderMD::EmitOp2FpRegister(Arm64CodeEmitter &Emitter, IR::Instr *instr, _Emitter emitter)
+{
+    return EmitOp2FpRegister(Emitter, instr->GetDst(), instr->GetSrc1(), emitter);
+}
+
+template<typename _Emitter>
+int EncoderMD::EmitOp2FpRegister(Arm64CodeEmitter &Emitter, IR::Opnd* opnd1, IR::Opnd* opnd2, _Emitter emitter)
+{
+    Assert(opnd1->IsRegOpnd());
+    Assert(opnd2->IsRegOpnd());
+
+    int size = opnd1->GetSize();
+    Assert(size == 4 || size == 8);
+    Assert(size == opnd2->GetSize());
+
+    NEON_SIZE neonSize = (size == 8) ? SIZE_1D : SIZE_1S;
+
+    return emitter(Emitter, this->GetFloatRegEncode(opnd1->AsRegOpnd()), this->GetFloatRegEncode(opnd2->AsRegOpnd()), neonSize);
+}
+
+template<typename _Emitter>
+int EncoderMD::EmitOp3FpRegister(Arm64CodeEmitter &Emitter, IR::Instr *instr, _Emitter emitter)
+{
+    IR::Opnd* dst = instr->GetDst();
+    IR::Opnd* src1 = instr->GetSrc1();
+    IR::Opnd* src2 = instr->GetSrc2();
+
+    Assert(dst->IsRegOpnd());
+    Assert(src1->IsRegOpnd());
+    Assert(src2->IsRegOpnd());
+
+    int size = dst->GetSize();
+    Assert(size == 4 || size == 8);
+    Assert(size == src1->GetSize());
+    Assert(size == src2->GetSize());
+
+    NEON_SIZE neonSize = (size == 8) ? SIZE_1D : SIZE_1S;
+
+    return emitter(Emitter, this->GetFloatRegEncode(dst->AsRegOpnd()), this->GetFloatRegEncode(src1->AsRegOpnd()), this->GetFloatRegEncode(src2->AsRegOpnd()), neonSize);
+}
+
+template<typename _LoadStoreFunc>
+int EncoderMD::EmitLoadStoreFp(Arm64CodeEmitter &Emitter, IR::Instr* instr, IR::Opnd* memOpnd, IR::Opnd* srcDstOpnd, _LoadStoreFunc loadStore)
+{
+    Assert(srcDstOpnd->IsRegOpnd());
+    Assert(memOpnd->IsIndirOpnd() || memOpnd->IsSymOpnd());
+
+    int size = memOpnd->GetSize();
+    Assert(size == 4 || size == 8);
+
+    ARM64_REGISTER indexReg;
+    ARM64_REGISTER baseReg;
+    BYTE indexScale;
+    int32 offset;
+    if (DecodeMemoryOpnd(memOpnd, baseReg, indexReg, indexScale, offset))
+    {
+        // Should never get here
+        Assert(false);
+        return 0;
+    }
+    else
+    {
+        return loadStore(Emitter, this->GetFloatRegEncode(srcDstOpnd->AsRegOpnd()), (size == 8) ? SIZE_1D : SIZE_1S, baseReg, offset);
+    }
+}
+
+template<typename _LoadStoreFunc>
+int EncoderMD::EmitLoadStoreFpPair(Arm64CodeEmitter &Emitter, IR::Instr* instr, IR::Opnd* memOpnd, IR::Opnd* srcDst1Opnd, IR::Opnd* srcDst2Opnd, _LoadStoreFunc loadStore)
+{
+    Assert(memOpnd->IsIndirOpnd() || memOpnd->IsSymOpnd());
+
+    int size = memOpnd->GetSize();
+    Assert(size == 4 || size == 8);
+
+    ARM64_REGISTER indexReg;
+    ARM64_REGISTER baseReg;
+    BYTE indexScale;
+    int32 offset;
+    if (DecodeMemoryOpnd(memOpnd, baseReg, indexReg, indexScale, offset))
+    {
+        // Should never get here
+        Assert(false);
+        return 0;
+    }
+    else
+    {
+        return loadStore(Emitter, this->GetFloatRegEncode(srcDst1Opnd->AsRegOpnd()), this->GetFloatRegEncode(srcDst2Opnd->AsRegOpnd()), (size == 8) ? SIZE_1D : SIZE_1S, baseReg, offset);
+    }
+}
+
+template<typename _Int32Func, typename _Uint32Func, typename _Int64Func, typename _Uint64Func>
+int EncoderMD::EmitConvertToInt(Arm64CodeEmitter &Emitter, IR::Instr* instr, _Int32Func toInt32, _Uint32Func toUint32, _Int64Func toInt64, _Uint64Func toUint64)
+{
+    IR::Opnd* dst = instr->GetDst();
+    IR::Opnd* src1 = instr->GetSrc1();
+    Assert(dst->IsRegOpnd());
+    Assert(!dst->IsFloat());
+    Assert(src1->IsRegOpnd());
+    Assert(src1->IsFloat());
+
+    int size = dst->GetSize();
+    Assert(size == 4 || size == 8);
+    int srcSize = src1->GetSize();
+    Assert(srcSize == 4 || srcSize == 8);
+
+    if (dst->GetType() == TyInt32)
+    {
+        return toInt32(Emitter, this->GetRegEncode(dst->AsRegOpnd()), this->GetFloatRegEncode(src1->AsRegOpnd()), (srcSize == 8) ? SIZE_1D : SIZE_1S);
+    }
+    else if (dst->GetType() == TyUint32)
+    {
+        return toUint32(Emitter, this->GetRegEncode(dst->AsRegOpnd()), this->GetFloatRegEncode(src1->AsRegOpnd()), (srcSize == 8) ? SIZE_1D : SIZE_1S);
+    }
+    else if (dst->GetType() == TyInt64)
+    {
+        return toInt64(Emitter, this->GetRegEncode(dst->AsRegOpnd()), this->GetFloatRegEncode(src1->AsRegOpnd()), (srcSize == 8) ? SIZE_1D : SIZE_1S);
+    }
+    else if (dst->GetType() == TyUint64)
+    {
+        return toUint64(Emitter, this->GetRegEncode(dst->AsRegOpnd()), this->GetFloatRegEncode(src1->AsRegOpnd()), (srcSize == 8) ? SIZE_1D : SIZE_1S);
+    }
+    
+    // Shouldn't get here
+    Assert(false);
+    return 0;
+}
 
 //---------------------------------------------------------------------------
 //
@@ -456,7 +705,7 @@ EncoderMD::GenerateEncoding(IR::Instr* instr, BYTE *pc)
     IR::Opnd* dst = 0;
     IR::Opnd* src1 = 0;
     IR::Opnd* src2 = 0;
-    int bytes;
+    int bytes = 0;
     int size;
 
     switch (instr->m_opcode)
@@ -484,7 +733,20 @@ EncoderMD::GenerateEncoding(IR::Instr* instr, BYTE *pc)
     case Js::OpCode::B:
         bytes = this->EmitConditionalBranch(Emitter, instr, COND_AL);
         break;
-    
+
+    case Js::OpCode::BFI:
+        bytes = this->EmitBitfield(Emitter, instr, EmitBfi, EmitBfi64);
+        break;
+
+    case Js::OpCode::BFXIL:
+        bytes = this->EmitBitfield(Emitter, instr, EmitBfxil, EmitBfxil64);
+        break;
+
+    // ARM64_WORKITEM: Legalizer needs to convert BIC with immediate to AND with inverted immediate
+    case Js::OpCode::BIC:
+        bytes = this->EmitOp3Register(Emitter, instr, EmitBicRegister, EmitBicRegister64);
+        break;
+
     case Js::OpCode::BL:
         bytes = this->EmitUnconditionalBranch(Emitter, instr, EmitBl);
         break;
@@ -495,11 +757,6 @@ EncoderMD::GenerateEncoding(IR::Instr* instr, BYTE *pc)
     
     case Js::OpCode::BLR:
         bytes = this->EmitOp1Register64(Emitter, instr, EmitBlr);
-        break;
-    
-    // ARM64_WORKITEM: Legalizer needs to convert BIC with immediate to AND with inverted immediate
-    case Js::OpCode::BIC:
-        bytes = this->EmitOp3Register(Emitter, instr, EmitBicRegister, EmitBicRegister64);
         break;
     
     case Js::OpCode::BEQ:
@@ -558,8 +815,12 @@ EncoderMD::GenerateEncoding(IR::Instr* instr, BYTE *pc)
         bytes = this->EmitConditionalBranch(Emitter, instr, COND_VC);
         break;
     
-    case Js::OpCode::DEBUGBREAK:
-        bytes = EmitDebugBreak(Emitter);
+    case Js::OpCode::CBZ:
+        bytes = this->EmitCompareAndBranch(Emitter, instr, EmitCbz, EmitCbz64);
+        break;
+
+    case Js::OpCode::CBNZ:
+        bytes = this->EmitCompareAndBranch(Emitter, instr, EmitCbnz, EmitCbnz64);
         break;
 
     case Js::OpCode::CLZ:
@@ -576,24 +837,30 @@ EncoderMD::GenerateEncoding(IR::Instr* instr, BYTE *pc)
         Assert(false);
         break;
 
-    case Js::OpCode::CMP_ASR31:
-        dst = instr->GetDst();
+    case Js::OpCode::CSELLT:
+        bytes = this->EmitConditionalSelect(Emitter, instr, COND_LT, EmitCsel, EmitCsel64);
+        break;
+
+    case Js::OpCode::CSNEGPL:
+        bytes = this->EmitConditionalSelect(Emitter, instr, COND_PL, EmitCsneg, EmitCsneg64);
+        break;
+
+    case Js::OpCode::CMP_SXTW:
         src1 = instr->GetSrc1();
-        Assert(dst->IsRegOpnd());
+        src2 = instr->GetSrc2();
+        Assert(instr->GetDst() == nullptr);
         Assert(src1->IsRegOpnd());
+        Assert(src2->IsRegOpnd());
 
-        size = dst->GetSize();
-        Assert(size == 4 || size == 8);
-        Assert(size == src1->GetSize());
+        size = src1->GetSize();
+        Assert(size == 8);
+        Assert(size == src2->GetSize());
 
-        if (size == 8)
-        {
-            bytes = EmitSubsRegister64(Emitter, ARMREG_ZR, this->GetRegEncode(dst->AsRegOpnd()), Arm64RegisterParam(this->GetRegEncode(src1->AsRegOpnd()), SHIFT_ASR, 63));
-        }
-        else
-        {
-            bytes = EmitSubsRegister(Emitter, ARMREG_ZR, this->GetRegEncode(dst->AsRegOpnd()), Arm64RegisterParam(this->GetRegEncode(src1->AsRegOpnd()), SHIFT_ASR, 31));
-        }
+        bytes = EmitSubsRegister64(Emitter, ARMREG_ZR, this->GetRegEncode(src1->AsRegOpnd()), Arm64RegisterParam(this->GetRegEncode(src2->AsRegOpnd()), EXTEND_SXTW, 0));
+        break;
+
+    case Js::OpCode::DEBUGBREAK:
+        bytes = EmitDebugBreak(Emitter);
         break;
 
     case Js::OpCode::EOR:
@@ -601,25 +868,7 @@ EncoderMD::GenerateEncoding(IR::Instr* instr, BYTE *pc)
         break;
 
     case Js::OpCode::EOR_ASR31:
-        dst = instr->GetDst();
-        src1 = instr->GetSrc1();
-        src2 = instr->GetSrc2();
-        Assert(dst->IsRegOpnd());
-        Assert(src1->IsRegOpnd());
-        Assert(src2->IsRegOpnd());
-
-        size = dst->GetSize();
-        Assert(size == 4 || size == 8);
-        Assert(size == src1->GetSize());
-
-        if (size == 8)
-        {
-            bytes = EmitEorRegister64(Emitter, this->GetRegEncode(dst->AsRegOpnd()), this->GetRegEncode(src1->AsRegOpnd()), Arm64RegisterParam(this->GetRegEncode(src2->AsRegOpnd()), SHIFT_ASR, 63));
-        }
-        else
-        {
-            bytes = EmitEorRegister(Emitter, this->GetRegEncode(dst->AsRegOpnd()), this->GetRegEncode(src1->AsRegOpnd()), Arm64RegisterParam(this->GetRegEncode(src2->AsRegOpnd()), SHIFT_ASR, 31));
-        }
+        bytes = this->EmitOp3RegisterShifted(Emitter, instr, SHIFT_ASR, 63, EmitEorRegister, EmitEorRegister64);
         break;
 
     // Legalizer should convert these into MOVZ/MOVN/MOVK
@@ -635,9 +884,14 @@ EncoderMD::GenerateEncoding(IR::Instr* instr, BYTE *pc)
         bytes = this->EmitLoadStore(Emitter, instr, instr->GetSrc1(), instr->GetDst(), EmitLdrsbRegister, EmitLdrshRegister, EmitLdrswRegister64, EmitLdrRegister64, EmitLdrsbOffset, EmitLdrshOffset, EmitLdrswOffset64, EmitLdrOffset64);
         break;
 
-        // Note: src2 is really the second destination
+    // Note: src2 is really the second destination register, due to limitations of IR::Instr
     case Js::OpCode::LDP:
         bytes = this->EmitLoadStorePair(Emitter, instr, instr->GetSrc1(), instr->GetDst(), instr->GetSrc2(), EmitLdpOffset, EmitLdpOffset64);
+        break;
+
+    // Note: src2 is really the second destination register, due to limitations of IR::Instr
+    case Js::OpCode::LDP_POST:
+        bytes = this->EmitLoadStorePair(Emitter, instr, instr->GetSrc1(), instr->GetDst(), instr->GetSrc2(), EmitLdpOffsetPostIndex, EmitLdpOffsetPostIndex64);
         break;
 
     // Legalizer should convert this to MOV/ADD before getting here
@@ -654,43 +908,80 @@ EncoderMD::GenerateEncoding(IR::Instr* instr, BYTE *pc)
         break;
 
     case Js::OpCode::MOV:
+    case Js::OpCode::MOV_TRUNC:
         bytes = this->EmitOp2Register(Emitter, instr, EmitMovRegister, EmitMovRegister64);
         break;
 
     case Js::OpCode::MOVK:
-        this->EmitMovConstant(Emitter, instr, EmitMovk, EmitMovk64);
+        bytes = this->EmitMovConstant(Emitter, instr, EmitMovk, EmitMovk64);
         break;
     
     case Js::OpCode::MOVN:
-        this->EmitMovConstant(Emitter, instr, EmitMovn, EmitMovn64);
+        bytes = this->EmitMovConstant(Emitter, instr, EmitMovn, EmitMovn64);
         break;
 
     case Js::OpCode::MOVZ:
-        this->EmitMovConstant(Emitter, instr, EmitMovz, EmitMovz64);
+        bytes = this->EmitMovConstant(Emitter, instr, EmitMovz, EmitMovz64);
         break;
-    
+
+    case Js::OpCode::MRS_FPCR:
+        dst = instr->GetDst();
+        Assert(dst->IsRegOpnd());
+        Assert(dst->GetSize() == 4);
+        bytes = EmitMrs(Emitter, this->GetRegEncode(dst->AsRegOpnd()), ARM64_FPCR);
+        break;
+
+    case Js::OpCode::MRS_FPSR:
+        dst = instr->GetDst();
+        Assert(dst->IsRegOpnd());
+        Assert(dst->GetSize() == 4);
+        bytes = EmitMrs(Emitter, this->GetRegEncode(dst->AsRegOpnd()), ARM64_FPSR);
+        break;
+
+    case Js::OpCode::MSR_FPCR:
+        src1 = instr->GetSrc1();
+        Assert(src1->IsRegOpnd());
+        Assert(src1->GetSize() == 4);
+        bytes = EmitMsr(Emitter, this->GetRegEncode(src1->AsRegOpnd()), ARM64_FPCR);
+        break;
+
+    case Js::OpCode::MSR_FPSR:
+        src1 = instr->GetSrc1();
+        Assert(src1->IsRegOpnd());
+        Assert(src1->GetSize() == 4);
+        bytes = EmitMsr(Emitter, this->GetRegEncode(src1->AsRegOpnd()), ARM64_FPSR);
+        break;
+
     case Js::OpCode::MUL:
         bytes = this->EmitOp3Register(Emitter, instr, EmitMul, EmitMul64);
+        break;
+
+    case Js::OpCode::MVN:
+        bytes = this->EmitOp2Register(Emitter, instr, EmitMvnRegister, EmitMvnRegister64);
         break;
 
     // SMULL dst, src1, src2. src1 and src2 are 32-bit. dst is 64-bit.
     case Js::OpCode::SMULL:
         dst = instr->GetDst();
-        Assert(dst->IsRegOpnd());
         src1 = instr->GetSrc1();
-        Assert(src1->IsRegOpnd());
         src2 = instr->GetSrc2();
+        Assert(dst->IsRegOpnd());
+        Assert(src1->IsRegOpnd());
         Assert(src2->IsRegOpnd());
+
+        Assert(dst->GetSize() == 8);
+        Assert(src1->GetSize() == 4);
+        Assert(src2->GetSize() == 4);
         bytes = EmitSmull(Emitter, this->GetRegEncode(dst->AsRegOpnd()), this->GetRegEncode(src1->AsRegOpnd()), this->GetRegEncode(src2->AsRegOpnd()));
         break;
 
     // SMADDL (SMLAL from ARM32) dst, dst, src1, src2. src1 and src2 are 32-bit. dst is 64-bit.
     case Js::OpCode::SMADDL:
         dst = instr->GetDst();
-        Assert(dst->IsRegOpnd());
         src1 = instr->GetSrc1();
-        Assert(src1->IsRegOpnd());
         src2 = instr->GetSrc2();
+        Assert(dst->IsRegOpnd());
+        Assert(src1->IsRegOpnd());
         Assert(src2->IsRegOpnd());
         bytes = EmitSmaddl(Emitter, this->GetRegEncode(dst->AsRegOpnd()), this->GetRegEncode(dst->AsRegOpnd()), this->GetRegEncode(src1->AsRegOpnd()), this->GetRegEncode(src2->AsRegOpnd()));
         break;
@@ -698,12 +989,12 @@ EncoderMD::GenerateEncoding(IR::Instr* instr, BYTE *pc)
     // MSUB (MLS from ARM32) dst, src1, src2: Multiply and Subtract. We use 3 registers: dst = src1 - src2 * dst
     case Js::OpCode::MSUB:
         dst = instr->GetDst();
-        Assert(dst->IsRegOpnd());
         src1 = instr->GetSrc1();
-        Assert(src1->IsRegOpnd());
         src2 = instr->GetSrc2();
+        Assert(dst->IsRegOpnd());
+        Assert(src1->IsRegOpnd());
         Assert(src2->IsRegOpnd());
-        bytes = EmitMsub(Emitter, this->GetRegEncode(dst->AsRegOpnd()), this->GetRegEncode(src1->AsRegOpnd()), this->GetRegEncode(src2->AsRegOpnd()), this->GetRegEncode(dst->AsRegOpnd()));
+        bytes = EmitMsub(Emitter, this->GetRegEncode(dst->AsRegOpnd()), this->GetRegEncode(src2->AsRegOpnd()), this->GetRegEncode(dst->AsRegOpnd()), this->GetRegEncode(src1->AsRegOpnd()));
         break;
 
     case Js::OpCode::NOP:
@@ -727,6 +1018,10 @@ EncoderMD::GenerateEncoding(IR::Instr* instr, BYTE *pc)
         Assert(false);
         break;
 
+    case Js::OpCode::SBFX:
+        bytes = this->EmitBitfield(Emitter, instr, EmitSbfx, EmitSbfx64);
+        break;
+
     case Js::OpCode::SDIV:
         bytes = this->EmitOp3Register(Emitter, instr, EmitSdiv, EmitSdiv64);
         break;
@@ -735,9 +1030,12 @@ EncoderMD::GenerateEncoding(IR::Instr* instr, BYTE *pc)
         bytes = this->EmitLoadStore(Emitter, instr, instr->GetDst(), instr->GetSrc1(), EmitStrbRegister, EmitStrhRegister, EmitStrRegister, EmitStrRegister64, EmitStrbOffset, EmitStrhOffset, EmitStrOffset, EmitStrOffset64);
         break;
 
-    // Note: src2 is really the second destination
     case Js::OpCode::STP:
         bytes = this->EmitLoadStorePair(Emitter, instr, instr->GetDst(), instr->GetSrc1(), instr->GetSrc2(), EmitStpOffset, EmitStpOffset64);
+        break;
+
+    case Js::OpCode::STP_PRE:
+        bytes = this->EmitLoadStorePair(Emitter, instr, instr->GetDst(), instr->GetSrc1(), instr->GetSrc2(), EmitStpOffsetPreIndex, EmitStpOffsetPreIndex64);
         break;
 
     case Js::OpCode::SUB:
@@ -748,69 +1046,185 @@ EncoderMD::GenerateEncoding(IR::Instr* instr, BYTE *pc)
         bytes = this->EmitOp3RegisterOrImmediate(Emitter, instr, EmitSubsRegister, EmitSubsRegister64, EmitSubsImmediate, EmitSubsImmediate64);
         break;
 
+    case Js::OpCode::SUB_LSL4:
+        bytes = this->EmitOp3RegisterShifted(Emitter, instr, SHIFT_LSL, 4, EmitSubRegister, EmitSubRegister64);
+        break;
+
+    case Js::OpCode::TBZ:
+        bytes = this->EmitTestAndBranch(Emitter, instr, EmitTbz);
+        break;
+
+    case Js::OpCode::TBNZ:
+        bytes = this->EmitTestAndBranch(Emitter, instr, EmitTbnz);
+        break;
+
     // Legalizer should convert this to ANDS before getting here
     case Js::OpCode::TST:
         Assert(false);
         break;
 
-    }
+    case Js::OpCode::UBFX:
+        bytes = this->EmitBitfield(Emitter, instr, EmitUbfx, EmitUbfx64);
+        break;
 
-/*
+    case Js::OpCode::FABS:
+        bytes = this->EmitOp2FpRegister(Emitter, instr, EmitNeonFabs);
+        break;
 
-MACRO(TIOFLW,  Reg1,       OpSideEffect,   0,  LEGAL_CMP1,     INSTR_TYPE(Forms_TIOFLW), D___)
+    case Js::OpCode::FADD:
+        bytes = this->EmitOp3FpRegister(Emitter, instr, EmitNeonFadd);
+        break;
 
-// Pseudo-op that loads the size of the arg out area. A special op with no src is used so that the
-// actual arg out size can be fixed up by the encoder.
-MACRO(LDARGOUTSZ,Reg1,     0,              0,  LEGAL_REG1,     INSTR_TYPE(Forms_LDIMM), D___)
+    case Js::OpCode::FCMP:
+        bytes = this->EmitOp2FpRegister(Emitter, instr->GetSrc1(), instr->GetSrc2(), EmitNeonFcmp);
+        break;
 
-// Pseudo-op: dst = EOR src, src ASR #31
-MACRO(CLRSIGN, Reg2,       0,              0,  LEGAL_REG2,     INSTR_TYPE(Forms_CLRSIGN), D___)
+    case Js::OpCode::FCVT:
+        dst = instr->GetDst();
+        src1 = instr->GetSrc1();
+        Assert(dst->IsRegOpnd());
+        Assert(src1->IsRegOpnd());
+        Assert(dst->IsFloat());
 
-// Pseudo-op: dst = SUB src1, src2 ASR #31
-MACRO(SBCMPLNT, Reg3,      0,              0,  LEGAL_REG3,     INSTR_TYPE(Forms_SBCMPLNT), D___)
+        size = dst->GetSize();
+        Assert(size == 4 || size == 8);
 
+        if (src1->IsFloat())
+        {
+            bytes = EmitNeonFcvt(Emitter, this->GetFloatRegEncode(dst->AsRegOpnd()), (size == 8) ? SIZE_1D : SIZE_1S, this->GetFloatRegEncode(src1->AsRegOpnd()), (src1->GetSize() == 8) ? SIZE_1D : SIZE_1S);
+        }
+        else if (src1->GetType() == TyInt32)
+        {
+            bytes = EmitNeonScvtf(Emitter, this->GetFloatRegEncode(dst->AsRegOpnd()), Arm64SimpleRegisterParam(this->GetRegEncode(src1->AsRegOpnd())), (size == 8) ? SIZE_1D : SIZE_1S);
+        }
+        else if (src1->GetType() == TyUint32)
+        {
+            bytes = EmitNeonUcvtf(Emitter, this->GetFloatRegEncode(dst->AsRegOpnd()), Arm64SimpleRegisterParam(this->GetRegEncode(src1->AsRegOpnd())), (size == 8) ? SIZE_1D : SIZE_1S);
+        }
+        else if (src1->GetType() == TyInt64)
+        {
+            bytes = EmitNeonScvtf64(Emitter, this->GetFloatRegEncode(dst->AsRegOpnd()), Arm64SimpleRegisterParam(this->GetRegEncode(src1->AsRegOpnd())), (size == 8) ? SIZE_1D : SIZE_1S);
+        }
+        else if (src1->GetType() == TyUint64)
+        {
+            bytes = EmitNeonUcvtf64(Emitter, this->GetFloatRegEncode(dst->AsRegOpnd()), Arm64SimpleRegisterParam(this->GetRegEncode(src1->AsRegOpnd())), (size == 8) ? SIZE_1D : SIZE_1S);
+        }
+        break;
 
-//VFP instructions:
-MACRO(VABS,     Reg2,      0,              0,  LEGAL_REG2,      INSTR_TYPE(Forms_VABS),   D___)
-MACRO(VADDF64,  Reg3,      0,              0,  LEGAL_REG3,      INSTR_TYPE(Forms_VADDF64),   D___)
-MACRO(VCMPF64,  Reg1,      OpSideEffect,   0,  LEGAL_CMP_SH,    INSTR_TYPE(Forms_VCMPF64),   D___)
-MACRO(VCVTF64F32, Reg2,    0,              0,  LEGAL_REG2,      INSTR_TYPE(Forms_VCVTF64F32),   D___)
-MACRO(VCVTF32F64, Reg2,    0,              0,  LEGAL_REG2,      INSTR_TYPE(Forms_VCVTF32F64),   D___)
-MACRO(VCVTF64S32, Reg2,    0,              0,  LEGAL_REG2,      INSTR_TYPE(Forms_VCVTF64S32),   D___)
-MACRO(VCVTF64U32, Reg2,    0,              0,  LEGAL_REG2,      INSTR_TYPE(Forms_VCVTF64U32),   D___)
-MACRO(VCVTS32F64, Reg2,    0,              0,  LEGAL_REG2,      INSTR_TYPE(Forms_VCVTS32F64),   D___)
-MACRO(VCVTRS32F64, Reg2,   0,              0,  LEGAL_REG2,      INSTR_TYPE(Forms_VCVTRS32F64),   D___)
-MACRO(VDIVF64,  Reg3,      0,              0,  LEGAL_REG3,      INSTR_TYPE(Forms_VDIVF64),   D___)
-MACRO(VLDR,     Reg2,      0,              0,  LEGAL_VLOAD,     INSTR_TYPE(Forms_VLDR),   DL__)
-MACRO(VLDR32,   Reg2,      0,              0,  LEGAL_VLOAD,     INSTR_TYPE(Forms_VLDR32), DL__) //single precision float load
-MACRO(VMOV,     Reg2,      0,              0,  LEGAL_REG2,      INSTR_TYPE(Forms_VMOV),   DM__)
-MACRO(VMOVARMVFP, Reg2,    0,              0,  LEGAL_REG2,      INSTR_TYPE(Forms_VMOVARMVFP),   DM__)
-MACRO(VMRS,     Empty,     OpSideEffect,   0,  LEGAL_NONE,      INSTR_TYPE(Forms_VMRS),   D___)
-MACRO(VMRSR,    Reg1,      OpSideEffect,   0,  LEGAL_NONE,      INSTR_TYPE(Forms_VMRSR),   D___)
-MACRO(VMSR,     Reg1,      OpSideEffect,   0,  LEGAL_NONE,      INSTR_TYPE(Forms_VMSR),   D___)
-MACRO(VMULF64,  Reg3,      0,              0,  LEGAL_REG3,      INSTR_TYPE(Forms_VMULF64),   D___)
-MACRO(VNEGF64,  Reg2,      0,              0,  LEGAL_REG2,      INSTR_TYPE(Forms_VNEGF64),   D___)
-MACRO(VPUSH,    Reg2,      OpSideEffect,   0,  LEGAL_VPUSHPOP,  INSTR_TYPE(Forms_VPUSH), DSUS)
-MACRO(VPOP,     Reg2,      OpSideEffect,   0,  LEGAL_VPUSHPOP,  INSTR_TYPE(Forms_VPOP), DLUP)
-MACRO(VSUBF64,  Reg3,      0,              0,  LEGAL_REG3,      INSTR_TYPE(Forms_VSUBF64),   D___)
-MACRO(VSQRT,    Reg2,      0,              0,  LEGAL_REG2,      INSTR_TYPE(Forms_VSQRT),   D___)
-MACRO(VSTR,     Reg2,      0,              0,  LEGAL_VSTORE,    INSTR_TYPE(Forms_VSTR),   DS__)
-MACRO(VSTR32,   Reg2,      0,              0,  LEGAL_VSTORE,    INSTR_TYPE(Forms_VSTR32), DS__) //single precision float store
-    }
+    case Js::OpCode::FCVTM:
+        bytes = this->EmitConvertToInt(Emitter, instr, EmitNeonFcvtmsGen, EmitNeonFcvtmuGen, EmitNeonFcvtmsGen64, EmitNeonFcvtmuGen64);
+        break;
 
-*/
+    case Js::OpCode::FCVTN:
+        bytes = this->EmitConvertToInt(Emitter, instr, EmitNeonFcvtnsGen, EmitNeonFcvtnuGen, EmitNeonFcvtnsGen64, EmitNeonFcvtnuGen64);
+        break;
 
-// ToDo (SaAgarwa) - Commented to compile debug build
-/*
-#if DBG
-    if (!done)
-    {
+    case Js::OpCode::FCVTP:
+        bytes = this->EmitConvertToInt(Emitter, instr, EmitNeonFcvtpsGen, EmitNeonFcvtpuGen, EmitNeonFcvtpsGen64, EmitNeonFcvtpuGen64);
+        break;
+
+    case Js::OpCode::FCVTZ:
+        bytes = this->EmitConvertToInt(Emitter, instr, EmitNeonFcvtzsGen, EmitNeonFcvtzuGen, EmitNeonFcvtzsGen64, EmitNeonFcvtzuGen64);
+        break;
+
+    case Js::OpCode::FDIV:
+        bytes = this->EmitOp3FpRegister(Emitter, instr, EmitNeonFdiv);
+        break;
+
+    case Js::OpCode::FLDR:
+        bytes = this->EmitLoadStoreFp(Emitter, instr, instr->GetSrc1(), instr->GetDst(), EmitNeonLdrOffset);
+        break;
+
+    // Note: src2 is really the second destination register, due to limitations of IR::Instr
+    case Js::OpCode::FLDP:
+        bytes = this->EmitLoadStoreFpPair(Emitter, instr, instr->GetSrc1(), instr->GetDst(), instr->GetSrc2(), EmitNeonLdpOffset);
+        break;
+
+    case Js::OpCode::FMIN:
+        bytes = this->EmitOp3FpRegister(Emitter, instr, EmitNeonFmin);
+        break;
+
+    case Js::OpCode::FMAX:
+        bytes = this->EmitOp3FpRegister(Emitter, instr, EmitNeonFmax);
+        break;
+
+    case Js::OpCode::FMOV:
+        bytes = this->EmitOp2FpRegister(Emitter, instr, EmitNeonFmov);
+        break;
+
+    case Js::OpCode::FMOV_GEN:
+        dst = instr->GetDst();
+        src1 = instr->GetSrc1();
+        Assert(dst->IsRegOpnd());
+        Assert(src1->IsRegOpnd());
+
+        size = dst->GetSize();
+        Assert(size == 4 || size == 8);
+        Assert(size == src1->GetSize());
+
+        Assert(dst->IsFloat() != src1->IsFloat());
+        if (dst->IsFloat())
+        {
+            bytes = EmitNeonIns(Emitter, this->GetFloatRegEncode(dst->AsRegOpnd()), 0, this->GetRegEncode(src1->AsRegOpnd()), (size == 8) ? SIZE_1D : SIZE_1S);
+        }
+        else
+        {
+            if (size == 8)
+            { 
+                bytes = EmitNeonUmov64(Emitter, this->GetFloatRegEncode(dst->AsRegOpnd()), this->GetRegEncode(src1->AsRegOpnd()), 0, (size == 8) ? SIZE_1D : SIZE_1S);
+            }
+            else
+            {
+                bytes = EmitNeonUmov(Emitter, this->GetFloatRegEncode(dst->AsRegOpnd()), this->GetRegEncode(src1->AsRegOpnd()), 0, (size == 8) ? SIZE_1D : SIZE_1S);
+            }
+        }
+        break;
+
+    case Js::OpCode::FMUL:
+        bytes = this->EmitOp3FpRegister(Emitter, instr, EmitNeonFmul);
+        break;
+
+    case Js::OpCode::FNEG:
+        bytes = this->EmitOp2FpRegister(Emitter, instr, EmitNeonFneg);
+        break;
+
+    case Js::OpCode::FRINTM:
+        bytes = this->EmitOp2FpRegister(Emitter, instr, EmitNeonFrintm);
+        break;
+
+    case Js::OpCode::FRINTP:
+        bytes = this->EmitOp2FpRegister(Emitter, instr, EmitNeonFrintp);
+        break;
+
+    case Js::OpCode::FSUB:
+        bytes = this->EmitOp3FpRegister(Emitter, instr, EmitNeonFsub);
+        break;
+
+    case Js::OpCode::FSQRT:
+        bytes = this->EmitOp2FpRegister(Emitter, instr, EmitNeonFsqrt);
+        break;
+
+    case Js::OpCode::FSTR:
+        bytes = this->EmitLoadStoreFp(Emitter, instr, instr->GetDst(), instr->GetSrc1(), EmitNeonStrOffset);
+        break;
+
+    case Js::OpCode::FSTP:
+        bytes = this->EmitLoadStoreFpPair(Emitter, instr, instr->GetDst(), instr->GetSrc1(), instr->GetSrc2(), EmitNeonStpOffset);
+        break;
+
+    // Opcode not yet implemented
+    default:
+#if DBG_DUMP
         instr->Dump();
         Output::Flush();
-        AssertMsg(UNREACHED, "Unsupported Instruction Form");
-    }
 #endif
-*/
+        AssertMsg(UNREACHED, "Unsupported Instruction Form");
+        break;
+
+    }
+
+    Assert(bytes != 0);
+
     return Emitter.Opcode();
 }
 
@@ -963,13 +1377,14 @@ EncoderMD::BaseAndOffsetFromSym(IR::SymOpnd *symOpnd, RegNum *pBaseReg, int32 *p
     {
         // SP points to the base of the argument area. Non-reg SP points directly to the locals.
         offset += (func->m_argSlotsForFunctionsCalled * MachRegInt);
-        if (func->HasInlinee())
+    }
+
+    if (func->HasInlinee())
+    {
+        Assert(func->HasInlinee());
+        if ((!stackSym->IsArgSlotSym() || stackSym->m_isOrphanedArg) && !stackSym->IsParamSlotSym())
         {
-            Assert(func->HasInlinee());
-            if ((!stackSym->IsArgSlotSym() || stackSym->m_isOrphanedArg) && !stackSym->IsParamSlotSym())
-            {
-                offset += func->GetInlineeArgumentStackSize();
-            }
+            offset += func->GetInlineeArgumentStackSize();
         }
     }
 
@@ -993,6 +1408,7 @@ EncoderMD::BaseAndOffsetFromSym(IR::SymOpnd *symOpnd, RegNum *pBaseReg, int32 *p
 
         if (func->HasInlinee())
         {
+            // TODO (megupta): BaseReg will be a pre-reserved non SP register when we start supporting try
             Assert(baseReg == RegSP);
             if (stackSym->IsArgSlotSym() && !stackSym->m_isOrphanedArg)
             {
@@ -1003,6 +1419,7 @@ EncoderMD::BaseAndOffsetFromSym(IR::SymOpnd *symOpnd, RegNum *pBaseReg, int32 *p
             {
                 AssertMsg(stackSym->IsAllocated(), "StackSym offset should be set");
                 //Assert((uint)offset > ((func->m_argSlotsForFunctionsCalled + func->GetMaxInlineeArgOutCount()) * MachRegInt));
+                //Assert(offset > (func->HasTry() ? (int32)func->GetMaxInlineeArgOutSize() : (int32)(func->m_argSlotsForFunctionsCalled * MachRegInt + func->GetMaxInlineeArgOutSize())));
             }
         }
         // TODO: restore the following assert (very useful) once we have a way to tell whether prolog/epilog
@@ -1023,116 +1440,13 @@ EncoderMD::BaseAndOffsetFromSym(IR::SymOpnd *symOpnd, RegNum *pBaseReg, int32 *p
 void
 EncoderMD::ApplyRelocs(size_t codeBufferAddress, size_t codeSize, uint* bufferCRC, BOOL isBrShorteningSucceeded, bool isFinalBufferValidation)
 {
-#if 0
-
-    // ARM64_WORKITEM
-
     for (EncodeReloc *reloc = m_relocList; reloc; reloc = reloc->m_next)
     {
         BYTE * relocAddress = reloc->m_consumerOffset;
-        int64 pcrel;
-        DWORD encode = *(DWORD*)relocAddress;
-        switch (reloc->m_relocType)
-        {
-        case RelocTypeBranch20:
-            {
-                IR::LabelInstr * labelInstr = reloc->m_relocInstr->AsLabelInstr();
-                Assert(!labelInstr->isInlineeEntryInstr);
-                AssertMsg(labelInstr->GetPC() != nullptr, "Branch to unemitted label?");
-                pcrel = (uint32)(labelInstr->GetPC() - reloc->m_consumerOffset);
-                encode |= BranchOffset_T2_20(pcrel);
-                *(uint32 *)relocAddress = encode;
-                break;
-            }
+        IR::LabelInstr * labelInstr = reloc->m_relocInstr->AsLabelInstr();
 
-        case RelocTypeBranch24:
-            {
-                IR::LabelInstr * labelInstr = reloc->m_relocInstr->AsLabelInstr();
-                Assert(!labelInstr->isInlineeEntryInstr);
-                AssertMsg(labelInstr->GetPC() != nullptr, "Branch to unemitted label?");
-                pcrel = (uint32)(labelInstr->GetPC() - reloc->m_consumerOffset);
-                encode |= BranchOffset_T2_24(pcrel);
-                *(DWORD *)relocAddress = encode;
-                break;
-            }
-
-        case RelocTypeDataLabelLow:
-            {
-                IR::LabelInstr * labelInstr = reloc->m_relocInstr->AsLabelInstr();
-                Assert(!labelInstr->isInlineeEntryInstr && labelInstr->m_isDataLabel);
-
-                AssertMsg(labelInstr->GetPC() != nullptr, "Branch to unemitted label?");
-
-                pcrel = ((labelInstr->GetPC() - m_encoder->m_encodeBuffer + codeBufferAddress) & 0xFFFF);
-
-                if (!EncodeImmediate16(pcrel, (DWORD*) &encode))
-                {
-                    Assert(UNREACHED);
-                }
-                *(DWORD *) relocAddress = encode;
-                break;
-            }
-
-        case RelocTypeLabelLow:
-            {
-                // Absolute (not relative) label address (lower 16 bits)
-                IR::LabelInstr * labelInstr = reloc->m_relocInstr->AsLabelInstr();
-                if (!labelInstr->isInlineeEntryInstr)
-                {
-                    AssertMsg(labelInstr->GetPC() != nullptr, "Branch to unemitted label?");
-                    // Note that the bottom bit must be set, since this is a Thumb code address.
-                    pcrel = ((labelInstr->GetPC() - m_encoder->m_encodeBuffer + codeBufferAddress) & 0xFFFF) | 1;
-                }
-                else
-                {
-                    //This is a encoded low 16 bits.
-                    pcrel = labelInstr->GetOffset() & 0xFFFF;
-                }
-                if (!EncodeImmediate16(pcrel, (DWORD*) &encode))
-                {
-                    Assert(UNREACHED);
-                }
-                *(DWORD *) relocAddress = encode;
-                break;
-            }
-
-        case RelocTypeLabelHigh:
-            {
-                // Absolute (not relative) label address (upper 16 bits)
-                IR::LabelInstr * labelInstr = reloc->m_relocInstr->AsLabelInstr();
-                if (!labelInstr->isInlineeEntryInstr)
-                {
-                    AssertMsg(labelInstr->GetPC() != nullptr, "Branch to unemitted label?");
-                    pcrel = (labelInstr->GetPC() - m_encoder->m_encodeBuffer + codeBufferAddress) >> 16;
-                    // We only record the relocation on the low byte of the pair
-                }
-                else
-                {
-                    //This is a encoded high 16 bits.
-                    pcrel = labelInstr->GetOffset() >> 16;
-                }
-                if (!EncodeImmediate16(pcrel, (DWORD*) &encode))
-                {
-                    Assert(UNREACHED);
-                }
-                *(DWORD *) relocAddress = encode;
-                break;
-            }
-
-        case RelocTypeLabel:
-            {
-                IR::LabelInstr * labelInstr = reloc->m_relocInstr->AsLabelInstr();
-                AssertMsg(labelInstr->GetPC() != nullptr, "Branch to unemitted label?");
-                /* For Thumb instruction set -> OR 1 with the address*/
-                *(uint32 *)relocAddress = (uint32)(labelInstr->GetPC() - m_encoder->m_encodeBuffer + codeBufferAddress)  | 1;
-                break;
-            }
-        default:
-            AssertMsg(UNREACHED, "Unknown reloc type");
-        }
+        ArmBranchLinker::LinkRaw((PULONG)relocAddress, (PULONG)labelInstr->GetPC());
     }
-
-#endif
 }
 
 void

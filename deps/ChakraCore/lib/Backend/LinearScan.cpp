@@ -1117,6 +1117,16 @@ LinearScan::SetUses(IR::Instr *instr, IR::Opnd *opnd)
             }
         }
         break;
+
+    case IR::OpndKindList:
+    {
+        opnd->AsListOpnd()->Map([&](int i, IR::Opnd* opnd)
+        {
+            this->SetUses(instr, opnd);
+        });
+    }
+    break;
+
     case IR::OpndKindIntConst:
     case IR::OpndKindAddr:
         this->linearScanMD.LegalizeConstantUse(instr, opnd);
@@ -1412,6 +1422,14 @@ LinearScan::FillBailOutRecord(IR::Instr * instr)
         // To indicate this is a subsequent bailout from an inlinee
         bailOutRecord->bailOutOpcode = Js::OpCode::InlineeEnd;
 #endif
+        if (this->func->HasTry())
+        {
+            RegionType currentRegionType = this->currentRegion->GetType();
+            if (currentRegionType == RegionTypeTry || currentRegionType == RegionTypeCatch || currentRegionType == RegionTypeFinally)
+            {
+                bailOutRecord->ehBailoutData = this->currentRegion->ehBailoutData;
+            }
+        }
         funcBailOutData[funcIndex].bailOutRecord->parent = bailOutRecord;
         funcIndex--;
         funcBailOutData[funcIndex].bailOutRecord = bailOutRecord;

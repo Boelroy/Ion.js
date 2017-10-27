@@ -721,7 +721,7 @@ NativeCodeGenerator::IsValidVar(const Js::Var var, Recycler *const recycler)
     }
 #endif
 
-    RecyclableObject *const recyclableObject = RecyclableObject::FromVar(var);
+    RecyclableObject *const recyclableObject = RecyclableObject::UnsafeFromVar(var);
     if(!recycler->IsValidObject(recyclableObject, sizeof(*recyclableObject)))
     {
         return false;
@@ -1871,7 +1871,7 @@ NativeCodeGenerator::Prioritize(JsUtil::Job *const job, const bool forceAddJobTo
     if (functionBody->GetIsAsmjsMode())
     {
         jitMode = ExecutionMode::FullJit;
-        functionBody->SetExecutionMode(ExecutionMode::FullJit);
+        functionBody->SetAsmJsExecutionMode();
     }
     else
     {

@@ -17,7 +17,8 @@ enum LegalForms
     L_ImmU6 =       0x80,
     L_ImmU16 =      0x100,
     L_Imm =         0x200,
-    L_ImmMask =     (L_ImmLog12 | L_ImmU12 | L_ImmU12Lsl12 | L_ImmU6 | L_ImmU16 | L_Imm),
+    L_ImmU6U6 =     0x400,
+    L_ImmMask =     (L_ImmLog12 | L_ImmU12 | L_ImmU12Lsl12 | L_ImmU6 | L_ImmU16 | L_Imm | L_ImmU6U6),
 
     L_IndirSU12I9 = 0x1000,
     L_IndirSI7 =    0x2000,
@@ -40,31 +41,30 @@ struct LegalInstrForms
 };
 
 #define LEGAL_NONE     { L_None,    { L_None,    L_None } }
+
+// Used for opcodes that should be converted before legalizer kicks in
+#define LEGAL_PSEUDO   LEGAL_NONE
+
 #define LEGAL_ADDSUB   { L_Reg,     { L_Reg,     (LegalForms)(L_Reg | L_ImmU12 | L_ImmU12Lsl12) } }
-#define LEGAL_ADDSUBW  { L_Reg,     { L_Reg,     (LegalForms)(L_Reg | L_ImmU12 | L_ImmU12Lsl12) } }
 #define LEGAL_ALU2     { L_Reg,     { (LegalForms)(L_Reg | L_ImmLog12), L_None } }
 #define LEGAL_ALU3     { L_Reg,     { L_Reg,     (LegalForms)(L_Reg | L_ImmLog12) } }
 #define LEGAL_SHIFT    { L_Reg,     { L_Reg,     (LegalForms)(L_Reg | L_ImmU6) } }
+#define LEGAL_BITFIELD { L_Reg,     { L_Reg,     L_ImmU6U6 } }
 #define LEGAL_BLAB     LEGAL_NONE
-#define LEGAL_BREG     { L_None,    { L_Reg,     L_None } }
 #define LEGAL_CALL     { L_Reg,     { L_Lab20 ,  L_None } } // Not currently generated, offset check is missing
-#define LEGAL_CMP      { L_None,    { L_Reg,     (LegalForms)(L_Reg | L_ImmU12 | L_ImmU12Lsl12) } }
-#define LEGAL_CMP_SH   { L_None,    { L_Reg,     L_Reg } }
-#define LEGAL_CMP1     { L_None,    { L_Reg,     L_None } }
-#define LEGAL_CMN      { L_None,    { L_Reg,     (LegalForms)(L_Reg | L_ImmModC12) } }
+#define LEGAL_CBZ      { L_None,    { L_Reg } }
 #define LEGAL_LDIMM    { L_Reg,     { L_Imm,     L_None } }
-#define LEGAL_LEA      { L_Reg,     { (LegalForms)(L_SymU12 | L_IndirU12),  L_None } }
 #define LEGAL_LOAD     { L_Reg,     { (LegalForms)(L_IndirSU12I9 | L_SymSU12I9), L_None } }
-#define LEGAL_LOADP    { L_Reg,     { (LegalForms)(L_IndirSI7 | L_SymSI7), L_Reg } }    // ARM64_WORKITEM: need to figure multiple destinations here
-#define LEGAL_MOVIMM16 { L_Reg,     { L_ImmU16,  L_None } }
+#define LEGAL_LOADP    { L_Reg,     { (LegalForms)(L_IndirSI7 | L_SymSI7), L_Reg } }
+#define LEGAL_PLD      { L_None,    { (LegalForms)(L_IndirSU12I9 | L_SymSU12I9), L_None } }
 #define LEGAL_REG1     { L_Reg,     { L_None,    L_None } }
 #define LEGAL_REG2     { L_Reg,     { L_Reg,     L_None } }
+#define LEGAL_REG2_ND  { L_None,    { L_Reg,     L_None } }
 #define LEGAL_REG3     { L_Reg,     { L_Reg,     L_Reg  } }
+#define LEGAL_REG3_ND  { L_None,    { L_Reg,     L_Reg } }
 #define LEGAL_STORE    { (LegalForms)(L_IndirSU12I9 | L_SymSU12I9), { L_Reg, L_None } }
 #define LEGAL_STOREP   { (LegalForms)(L_IndirSI7 | L_SymSI7), { L_Reg, L_Reg } }
-
-#define LEGAL_VSTORE   { (LegalForms)(L_IndirSU12I9 | L_SymSU12I9), { L_Reg, L_None } }
-#define LEGAL_VLOAD    { L_Reg,     { (LegalForms)(L_IndirSU12I9 | L_SymSU12I9), L_None } }
+#define LEGAL_TBZ      { L_None,    { L_Reg,     L_ImmU6 } }
 
 class LegalizeMD
 {
@@ -74,10 +74,9 @@ public:
     static void LegalizeSrc(IR::Instr * instr, IR::Opnd * opnd, uint opndNum, bool fPostRegAlloc);
 
     static bool LegalizeDirectBranch(IR::BranchInstr *instr, uint32 branchOffset); // DirectBranch has no src & dst operands.
-    //Returns IndexOpnd which is removed from VFP indirect operand
-    static void LegalizeIndirOpndForVFP(IR::Instr* insertInstr, IR::IndirOpnd *indirOpnd, bool fPostRegAlloc);
 
 private:
+    static void LegalizeRegOpnd(IR::Instr* instr, IR::Opnd* opnd);
     static IR::Instr *LegalizeStore(IR::Instr *instr, LegalForms forms, bool fPostRegAlloc);
     static IR::Instr *LegalizeLoad(IR::Instr *instr, uint opndNum, LegalForms forms, bool fPostRegAlloc);
     static void LegalizeIndirOffset(IR::Instr * instr, IR::IndirOpnd * indirOpnd, LegalForms forms, bool fPostRegAlloc);
@@ -87,7 +86,9 @@ private:
 
     static void LegalizeLDIMM(IR::Instr * instr, IntConstType immed);
     static void LegalizeLdLabel(IR::Instr * instr, IR::Opnd * opnd);
-    static IR::Instr * GenerateLDIMM(IR::Instr * instr, uint opndNum, RegNum scratchReg);
+    static IR::Instr * GenerateLDIMM(IR::Instr * instr, uint opndNum, RegNum scratchReg, bool fPostRegAlloc);
+
+    static IR::Instr * GenerateHoistSrc(IR::Instr * instr, uint opndNum, Js::OpCode op, RegNum scratchReg, bool fPostRegAlloc);
 
     static void ObfuscateLDIMM(IR::Instr * instrMov, IR::Instr * instrMovt);
     static void EmitRandomNopBefore(IR::Instr * instrMov, UINT_PTR rand, RegNum targetReg);

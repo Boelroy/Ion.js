@@ -78,6 +78,11 @@ namespace Js
 #ifdef FAULT_INJECTION
         disposeScriptByFaultInjectionEventHandler(nullptr),
 #endif
+
+#ifndef CC_LOW_MEMORY_TARGET
+        integerStringMapCacheMissCount(0),
+        integerStringMapCacheUseCount(0),
+#endif
         guestArena(nullptr),
 #ifdef ENABLE_SCRIPT_DEBUGGING
         diagnosticArena(nullptr),
@@ -851,6 +856,18 @@ namespace Js
         return propertyRecord->GetPropertyId();
     }
 
+    void ScriptContext::GetOrAddPropertyRecord(_In_ Js::JavascriptString * propertyString, _Out_ PropertyRecord const** propertyRecord)
+    {
+        if (VirtualTableInfo<Js::PropertyString>::HasVirtualTable(propertyString) && propertyString->GetScriptContext() == this)
+        {
+            *propertyRecord = ((Js::PropertyString*)propertyString)->GetPropertyRecord();
+        }
+        else
+        {
+            GetOrAddPropertyRecord(propertyString->GetString(), propertyString->GetLength(), propertyRecord);
+        }
+    }
+
     void ScriptContext::GetOrAddPropertyRecord(JsUtil::CharacterBuffer<WCHAR> const& propertyName, PropertyRecord const ** propertyRecord)
     {
         threadContext->GetOrAddPropertyId(propertyName, propertyRecord);
@@ -869,7 +886,7 @@ namespace Js
         return propertyRecord->GetPropertyId();
     }
 
-    void ScriptContext::GetOrAddPropertyRecord(__in_ecount(propertyNameLength) LPCWSTR propertyName, __in int propertyNameLength, PropertyRecord const ** propertyRecord)
+    void ScriptContext::GetOrAddPropertyRecord(__in_ecount(propertyNameLength) LPCWSTR propertyName, _In_ int propertyNameLength, _Out_ PropertyRecord const ** propertyRecord)
     {
         threadContext->GetOrAddPropertyId(propertyName, propertyNameLength, propertyRecord);
         if (propertyNameLength == 2)
@@ -1759,6 +1776,9 @@ namespace Js
 
 // TODO: (obastemur) Could this be dynamic instead of compile time?
 #ifndef CC_LOW_MEMORY_TARGET // we don't need this on a target with low memory
+#define NUMBER_TO_STRING_CACHE_SIZE 1024
+#define NUMBER_TO_STRING_RE_CACHE_LIMIT 1024
+#define NUMBER_TO_STRING_RE_CACHE_REASON_LIMIT 48
         if (this->Cache()->integerStringMap == nullptr)
         {
             this->Cache()->integerStringMap = RecyclerNew(GetRecycler(), StringMap, GetRecycler());
@@ -1767,20 +1787,26 @@ namespace Js
         if (!integerStringMap->TryGetValue(value, &string))
         {
             // Add the string to hash table cache
-            // Don't add if table is getting too full.  We'll be holding on to
-            // too many strings, and table lookup will become too slow.
-            // TODO: Long term running app, this cache doesn't provide much value?
-            //       i.e. what is the importance of first 512 number to string calls?
-            //       a solution; count the number of times we couldn't use cache
-            //       after cache is full. If it's bigger than X ?? the discard the
-            //       previous cache?
-            if (integerStringMap->Count() > 512)
+            // limit the htable size to NUMBER_TO_STRING_CACHE_SIZE and refresh the cache often
+            // however don't re-cache if we didn't use it much! App may not be suitable for caching.
+            // 4% -> NUMBER_TO_STRING_RE_CACHE_REASON_LIMIT is equal to perf loss while we cache the stuff
+            if (integerStringMapCacheMissCount > NUMBER_TO_STRING_RE_CACHE_LIMIT)
+            {
+                integerStringMapCacheMissCount = 0;
+                if (integerStringMapCacheUseCount >= NUMBER_TO_STRING_RE_CACHE_REASON_LIMIT)
+                {
+                    integerStringMap->Clear();
+                }
+                integerStringMapCacheUseCount = 0;
+            }
+
+            if (integerStringMap->Count() > NUMBER_TO_STRING_CACHE_SIZE)
             {
 #endif
                 // Use recycler memory
                 string = TaggedInt::ToString(value, this);
-
 #ifndef CC_LOW_MEMORY_TARGET
+                integerStringMapCacheMissCount++;
             }
             else
             {
@@ -1790,6 +1816,10 @@ namespace Js
                 string = JavascriptString::NewCopyBuffer(stringBuffer + pos, (_countof(stringBuffer) - 1) - pos, this);
                 integerStringMap->AddNew(value, string);
             }
+        }
+        else if (integerStringMapCacheUseCount < NUMBER_TO_STRING_RE_CACHE_REASON_LIMIT)
+        {
+            integerStringMapCacheUseCount++;
         }
 #endif
 

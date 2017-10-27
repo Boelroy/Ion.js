@@ -2538,7 +2538,7 @@ namespace Js
         void ReleaseLoopHeaders();
         Js::LoopHeader * GetLoopHeader(uint index) const;
         Js::LoopHeader * GetLoopHeaderWithLock(uint index) const;
-        Js::Var GetLoopHeaderArrayPtr() const
+        Js::LoopHeader * GetLoopHeaderArrayPtr() const
         {
             Assert(this->GetLoopHeaderArray() != nullptr);
             return this->GetLoopHeaderArray();
@@ -2599,10 +2599,10 @@ namespace Js
         FunctionEntryPointInfo *GetSimpleJitEntryPointInfo() const;
         void SetSimpleJitEntryPointInfo(FunctionEntryPointInfo *const entryPointInfo);
 
-        ExecutionMode GetDefaultInterpreterExecutionMode() const;
+        void SetAsmJsExecutionMode();
+        void SetDefaultInterpreterExecutionMode();
         ExecutionMode GetExecutionMode() const;
         ExecutionMode GetInterpreterExecutionMode(const bool isPostBailout);
-        void SetExecutionMode(const ExecutionMode executionMode);
     private:
         bool IsInterpreterExecutionMode() const;
 
@@ -3586,9 +3586,9 @@ namespace Js
             slotArray[ScopeMetadataSlotIndex] = scopeMetadataObj;
         }
 
-        uint GetCount() const
+        size_t GetCount() const
         {
-            return ::Math::PointerCastToIntegralTruncate<uint>(slotArray[EncodedSlotCountSlotIndex]);
+            return ::Math::PointerCastToIntegralTruncate<size_t>(slotArray[EncodedSlotCountSlotIndex]);
         }
 
         void SetCount(uint count)
