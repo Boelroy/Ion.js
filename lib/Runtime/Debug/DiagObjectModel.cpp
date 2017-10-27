@@ -641,7 +641,7 @@ namespace Js
                 }
                 else if (pFBody->GetPropertyIdsForScopeSlotArray() != nullptr)
                 {
-                    uint slotArrayCount = slotArray.GetCount();
+                    uint slotArrayCount = static_cast<uint>(slotArray.GetCount());
                     pMembersList = JsUtil::List<DebuggerPropertyDisplayInfo *, ArenaAllocator>::New(arena, slotArrayCount);
 
                     for (uint32 i = 0; i < slotArrayCount; i++)
@@ -2481,7 +2481,7 @@ namespace Js
                                         else
                                         {
                                             const PropertyRecord* propertyRecord;
-                                            objectContext->GetOrAddPropertyRecord(obj->GetSz(), obj->GetLength(), &propertyRecord);
+                                            objectContext->GetOrAddPropertyRecord(obj, &propertyRecord);
                                             propertyId = propertyRecord->GetPropertyId();
                                         }
                                     }
@@ -3275,9 +3275,9 @@ namespace Js
 
     BOOL RecyclableTypedArrayAddress::Set(Var updateObject)
     {
-        if (Js::TypedArrayBase::Is(parentArray))
+        Js::TypedArrayBase* typedArrayObj = JavascriptOperators::TryFromVar<Js::TypedArrayBase>(parentArray);
+        if (typedArrayObj)
         {
-            Js::TypedArrayBase* typedArrayObj = Js::TypedArrayBase::FromVar(parentArray);
             return typedArrayObj->SetItem(index, updateObject, PropertyOperation_None);
         }
 
@@ -3295,9 +3295,9 @@ namespace Js
 
     BOOL RecyclableTypedArrayDisplay::HasChildren()
     {
-        if (Js::TypedArrayBase::Is(instance))
+        Js::TypedArrayBase* typedArrayObj = JavascriptOperators::TryFromVar<Js::TypedArrayBase>(instance);
+        if (typedArrayObj)
         {
-            Js::TypedArrayBase* typedArrayObj = Js::TypedArrayBase::FromVar(instance);
             if (typedArrayObj->GetLength() > 0)
             {
                 return TRUE;

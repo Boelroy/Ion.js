@@ -1221,12 +1221,22 @@ CHAKRA_API JsStringToPointer(_In_ JsValueRef stringValue, _Outptr_result_buffer_
 
 CHAKRA_API JsConvertValueToString(_In_ JsValueRef value, _Out_ JsValueRef *result)
 {
+    PARAM_NOT_NULL(result);
+    *result = nullptr;
+
+    if (value != nullptr && Js::JavascriptString::Is(value))
+    {
+        return ContextAPINoScriptWrapper_NoRecord([&](Js::ScriptContext *scriptContext) -> JsErrorCode {
+            VALIDATE_INCOMING_REFERENCE(value, scriptContext);
+
+            *result = value;
+            return JsNoError;
+        });
+    }
+
     return ContextAPIWrapper<JSRT_MAYBE_TRUE>([&] (Js::ScriptContext *scriptContext, TTDRecorder& _actionEntryPopper) -> JsErrorCode {
         PERFORM_JSRT_TTD_RECORD_ACTION(scriptContext, RecordJsRTVarToStringConversion, (Js::Var)value);
-
         VALIDATE_INCOMING_REFERENCE(value, scriptContext);
-        PARAM_NOT_NULL(result);
-        *result = nullptr;
 
         *result = (JsValueRef) Js::JavascriptConversion::ToString((Js::Var)value, scriptContext);
 
@@ -2138,7 +2148,7 @@ CHAKRA_API JsHasIndexedPropertiesExternalData(_In_ JsValueRef object, _Out_ bool
 
         if (Js::DynamicType::Is(Js::JavascriptOperators::GetTypeId(object)))
         {
-            Js::DynamicObject* dynamicObject = Js::DynamicObject::FromVar(object);
+            Js::DynamicObject* dynamicObject = Js::DynamicObject::UnsafeFromVar(object);
             Js::ArrayObject* objectArray = dynamicObject->GetObjectArray();
             *value = (objectArray && !Js::DynamicObject::IsAnyArray(objectArray));
         }
@@ -2168,7 +2178,7 @@ CHAKRA_API JsGetIndexedPropertiesExternalData(
         *arrayType = JsTypedArrayType();
         *elementLength = 0;
 
-        Js::DynamicObject* dynamicObject = Js::DynamicObject::FromVar(object);
+        Js::DynamicObject* dynamicObject = Js::DynamicObject::UnsafeFromVar(object);
         Js::ArrayObject* objectArray = dynamicObject->GetObjectArray();
         if (!objectArray)
         {
@@ -2209,6 +2219,36 @@ CHAKRA_API JsGetIndexedPropertiesExternalData(
         }
     }
     END_JSRT_NO_EXCEPTION
+}
+
+CHAKRA_API JsLessThan(_In_ JsValueRef object1, _In_ JsValueRef object2, _Out_ bool *result)
+{
+    return ContextAPIWrapper<JSRT_MAYBE_TRUE>([&](Js::ScriptContext *scriptContext, TTDRecorder& _actionEntryPopper) -> JsErrorCode {
+        PERFORM_JSRT_TTD_RECORD_ACTION(scriptContext, RecordJsRTLessThan, object1, object2, false);
+
+        VALIDATE_INCOMING_REFERENCE(object1, scriptContext);
+        VALIDATE_INCOMING_REFERENCE(object2, scriptContext);
+        PARAM_NOT_NULL(result);
+
+        *result = Js::JavascriptOperators::Less((Js::Var)object1, (Js::Var)object2, scriptContext) != 0;
+
+        return JsNoError;
+    });
+}
+
+CHAKRA_API JsLessThanOrEqual(_In_ JsValueRef object1, _In_ JsValueRef object2, _Out_ bool *result)
+{
+    return ContextAPIWrapper<JSRT_MAYBE_TRUE>([&](Js::ScriptContext *scriptContext, TTDRecorder& _actionEntryPopper) -> JsErrorCode {
+        PERFORM_JSRT_TTD_RECORD_ACTION(scriptContext, RecordJsRTLessThan, object1, object2, true);
+
+        VALIDATE_INCOMING_REFERENCE(object1, scriptContext);
+        VALIDATE_INCOMING_REFERENCE(object2, scriptContext);
+        PARAM_NOT_NULL(result);
+
+        *result = Js::JavascriptOperators::LessEqual((Js::Var)object1, (Js::Var)object2, scriptContext) != 0;
+
+        return JsNoError;
+    });
 }
 
 CHAKRA_API JsEquals(_In_ JsValueRef object1, _In_ JsValueRef object2, _Out_ bool *result)

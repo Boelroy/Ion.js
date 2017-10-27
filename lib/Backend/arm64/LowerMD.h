@@ -68,7 +68,6 @@ public:
             IR::Instr *     ChangeToHelperCall(IR::Instr * instr, IR::JnHelperMethod helperMethod, IR::LabelInstr *labelBailOut = nullptr,
                                                IR::Opnd *opndInstance = nullptr, IR::PropertySymOpnd * propSymOpnd = nullptr, bool isHelperContinuation = false);
             IR::Instr *     ChangeToHelperCallMem(IR::Instr * instr, IR::JnHelperMethod helperMethod);
-    static  IR::Instr *     CreateAssign(IR::Opnd *dst, IR::Opnd *src, IR::Instr *instrInsertPt, bool generateWriteBarrier = true);
     static  IR::Instr *     ChangeToAssign(IR::Instr * instr);
     static  IR::Instr *     ChangeToAssignNoBarrierCheck(IR::Instr * instr);
     static  IR::Instr *     ChangeToAssign(IR::Instr * instr, IRType type);
@@ -95,7 +94,6 @@ public:
     static  void            GenerateDebugBreak(IR::Instr * insertInstr);
 #endif
             void            GenerateTaggedZeroTest( IR::Opnd * opndSrc, IR::Instr * instrInsert, IR::LabelInstr * labelHelper = nullptr);
-            void            GenerateObjectPairTest(IR::Opnd * opndSrc1, IR::Opnd * opndSrc2, IR::Instr * insertInstr, IR::LabelInstr * labelTarget);
             bool            GenerateObjectTest(IR::Opnd * opndSrc, IR::Instr * insertInstr, IR::LabelInstr * labelTarget, bool fContinueLabel = false);
             bool            GenerateFastCmSrEqConst(IR::Instr *instr);
             bool            GenerateFastCmXxI4(IR::Instr *instr);
@@ -139,6 +137,7 @@ public:
             bool            GenerateLdThisCheck(IR::Instr * instr);
             bool            GenerateLdThisStrict(IR::Instr* instr);
             void            GenerateFloatTest(IR::RegOpnd * opndSrc, IR::Instr * insertInstr, IR::LabelInstr* labelHelper, const bool checkForNullInLoopBody = false);
+            IR::RegOpnd*    CheckFloatAndUntag(IR::RegOpnd * opndSrc, IR::Instr * insertInstr, IR::LabelInstr* labelHelper);
 
      static void            EmitInt4Instr(IR::Instr *instr);
             void            EmitLoadVar(IR::Instr *instr, bool isFromUint32 = false, bool isHelper = false);
@@ -150,13 +149,10 @@ public:
      static void            LowerInt4MulWithBailOut(IR::Instr *const instr, const IR::BailOutKind bailOutKind, IR::LabelInstr *const bailOutLabel, IR::LabelInstr *const skipBailOutLabel);
             void            LowerInt4RemWithBailOut(IR::Instr *const instr, const IR::BailOutKind bailOutKind, IR::LabelInstr *const bailOutLabel, IR::LabelInstr *const skipBailOutLabel) const;
             void            MarkOneFltTmpSym(StackSym *sym, BVSparse<JitArenaAllocator> *bvTmps, bool fFltPrefOp);
-            void            GenerateNumberAllocation(IR::RegOpnd * opndDst, IR::Instr * instrInsert, bool isHelper);
             void            GenerateFastRecyclerAlloc(size_t allocSize, IR::RegOpnd* newObjDst, IR::Instr* insertionPointInstr, IR::LabelInstr* allocHelperLabel, IR::LabelInstr* allocDoneLabel);
             void            SaveDoubleToVar(IR::RegOpnd * dstOpnd, IR::RegOpnd *opndFloat, IR::Instr *instrOrig, IR::Instr *instrInsert, bool isHelper = false);
             void            EmitLoadFloat(IR::Opnd *dst, IR::Opnd *src, IR::Instr *insertInstr, IR::Instr * instrBailOut = nullptr, IR::LabelInstr * labelBailOut = nullptr);
             IR::Instr *     LoadCheckedFloat(IR::RegOpnd *opndOrig, IR::RegOpnd *opndFloat, IR::LabelInstr *labelInline, IR::LabelInstr *labelHelper, IR::Instr *instrInsert, const bool checkForNullInLoopBody = false);
-
-            void LoadFloatValue(IR::RegOpnd * javascriptNumber, IR::RegOpnd * opndFloat, IR::LabelInstr * labelHelper, IR::Instr * instrInsert, const bool checkFornullptrInLoopBody = false);
 
             IR::Instr *     LoadStackAddress(StackSym *sym, IR::RegOpnd *regDst = nullptr);
             IR::Instr *     LowerCatch(IR::Instr *instr);
@@ -195,7 +191,7 @@ public:
             IR::Instr *         LowerToFloat(IR::Instr *instr);
      static IR::BranchInstr *   LowerFloatCondBranch(IR::BranchInstr *instrBranch, bool ignoreNaN = false);
             void                ConvertFloatToInt32(IR::Opnd* intOpnd, IR::Opnd* floatOpnd, IR::LabelInstr * labelHelper, IR::LabelInstr * labelDone, IR::Instr * instInsert);
-            void                CheckOverflowOnFloatToInt32(IR::Instr* instr, IR::Opnd* intOpnd, IR::LabelInstr * labelHelper, IR::LabelInstr * labelDone);
+            void                CheckOverflowOnFloatToInt32(IR::Instr* instrInsert, IR::Opnd* intOpnd, IR::LabelInstr * labelHelper, IR::LabelInstr * labelDone);
             void                EmitLoadVarNoCheck(IR::RegOpnd * dst, IR::RegOpnd * src, IR::Instr *instrLoad, bool isFromUint32, bool isHelper);
             void                EmitIntToFloat(IR::Opnd *dst, IR::Opnd *src, IR::Instr *instrInsert);
             void                EmitUIntToFloat(IR::Opnd *dst, IR::Opnd *src, IR::Instr *instrInsert);
@@ -223,7 +219,7 @@ public:
             IR::LabelInstr *    EnsureEpilogLabel();
             IR::Instr *         LowerEHRegionReturn(IR::Instr * insertBeforeInstr, IR::Opnd * targetOpnd);
             void                FinishArgLowering();
-            IR::Opnd *          GetOpndForArgSlot(Js::ArgSlot argSlot, bool isDoubleArgument = false);
+            IR::Opnd *          GetOpndForArgSlot(Js::ArgSlot argSlot, IR::Opnd * argOpnd = nullptr);
             bool                GenerateStackAllocation(IR::Instr *instr, uint32 allocSize, uint32 probeSize);
             void                GenerateStackDeallocation(IR::Instr *instr, uint32 allocSize);
             void                GenerateStackProbe(IR::Instr *instr, bool afterProlog);
@@ -234,26 +230,24 @@ public:
 
             IR::Opnd*           IsOpndNegZero(IR::Opnd* opnd, IR::Instr* instr);
             void                GenerateFastInlineBuiltInMathAbs(IR::Instr *callInstr);
-            void                GenerateFastInlineBuiltInMathFloor(IR::Instr *callInstr);
-            void                GenerateFastInlineBuiltInMathCeil(IR::Instr *callInstr);
-            void                GenerateFastInlineBuiltInMathRound(IR::Instr *callInstr);
+            void                GenerateFastInlineBuiltInMathFloorCeilRound(IR::Instr *callInstr);
+            void                GenerateFastInlineBuiltInMathMinMax(IR::Instr *callInstr);
             static RegNum       GetRegStackPointer() { return RegSP; }
-            static RegNum       GetRegFramePointer() { return RegR11; }
+            static RegNum       GetRegFramePointer() { return RegFP; }
             static RegNum       GetRegReturn(IRType type) { return IRType_IsFloat(type) ? RegNOREG : RegR0; }
             static RegNum       GetRegArgI4(int32 argNum) { return RegNOREG; }
             static RegNum       GetRegArgR8(int32 argNum) { return RegNOREG; }
-            static Js::OpCode   GetLoadOp(IRType type) { return type == TyFloat64? Js::OpCode::VLDR : ((type == TyFloat32)? Js::OpCode::VLDR32 : Js::OpCode::LDR); }
-            static Js::OpCode   GetStoreOp(IRType type) { return type == TyFloat64? Js::OpCode::VSTR : ((type == TyFloat32)? Js::OpCode::VSTR32 : Js::OpCode::STR); }
-            static Js::OpCode   GetMoveOp(IRType type) { return IRType_IsFloat(type) ? Js::OpCode::VMOV : Js::OpCode::MOV; }
+            static Js::OpCode   GetLoadOp(IRType type) { return IRType_IsFloat(type) ? Js::OpCode::FLDR : Js::OpCode::LDR; }
+            static Js::OpCode   GetStoreOp(IRType type) { return IRType_IsFloat(type) ? Js::OpCode::FSTR : Js::OpCode::STR; }
+            static Js::OpCode   GetMoveOp(IRType type) { return IRType_IsFloat(type) ? Js::OpCode::FMOV : Js::OpCode::MOV; }
 
             static BYTE         GetDefaultIndirScale()
             {
                 return IndirScale4;
             }
 
-            // -4 is to avoid alignment issues popping up, we are conservative here.
-            // We might check for IsSmallStack first to push R4 register & then align.
-            static bool         IsSmallStack(uint32 size)   { return (size < (PAGESIZE - 4));}
+            // -16 is to avoid alignment issues popping up, we are conservative here.
+            static bool         IsSmallStack(uint32 size) { return (size < (PAGESIZE - MachStackAlignment)); }
 
             static void GenerateLoadTaggedType(IR::Instr * instrLdSt, IR::RegOpnd * opndType, IR::RegOpnd * opndTaggedType);
             static void GenerateLoadPolymorphicInlineCacheSlot(IR::Instr * instrLdSt, IR::RegOpnd * opndInlineCache, IR::RegOpnd * opndType, uint polymorphicInlineCacheSize);
@@ -275,7 +269,7 @@ public:
             void                LowerInlineSpreadArgOutLoop(IR::Instr *callInstr, IR::RegOpnd *indexOpnd, IR::RegOpnd *arrayElementsStartOpnd);
             void                LowerTypeof(IR::Instr * typeOfInstr);
 
-              void                GenerateMemInit(IR::RegOpnd * opnd, int32 offset, size_t value, IR::Instr * insertBeforeInstr, bool isZeroed = false) { __debugbreak(); }
+            void                GenerateMemInit(IR::RegOpnd * opnd, int32 offset, size_t value, IR::Instr * insertBeforeInstr, bool isZeroed = false);
 public:
     static IR::Instr * InsertCmovCC(const Js::OpCode opCode, IR::Opnd * dst, IR::Opnd* src1, IR::Instr* insertBeforeInstr, bool postRegAlloc);
 private:

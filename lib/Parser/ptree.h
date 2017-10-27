@@ -347,6 +347,7 @@ public:
     bool IsConstructor() const { return HasNoFlags(kFunctionIsAsync|kFunctionIsLambda|kFunctionIsAccessor);  }
     bool IsClassConstructor() const { return HasFlags(kFunctionIsClassConstructor); }
     bool IsBaseClassConstructor() const { return HasFlags(kFunctionIsBaseClassConstructor); }
+    bool IsDerivedClassConstructor() const { return IsClassConstructor() && !IsBaseClassConstructor(); }
     bool IsClassMember() const { return HasFlags(kFunctionIsClassMember); }
     bool IsDeclaration() const { return HasFlags(kFunctionDeclaration); }
     bool IsGeneratedDefault() const { return HasFlags(kFunctionIsGeneratedDefault); }
@@ -459,6 +460,7 @@ struct PnCall
     BYTE isApplyCall : 1;
     BYTE isEvalCall : 1;
     BYTE isSuperCall : 1;
+    BYTE hasDestructuring : 1;
 };
 
 struct PnStmt

@@ -7,6 +7,9 @@
 
 class Encoder;
 
+// use this to encode the immediate field for a bitfield instruction
+#define BITFIELD(lsb, width)    ((lsb) | ((width) << 16))
+
 enum RelocType {
     RelocTypeBranch14,
     RelocTypeBranch19,
@@ -23,25 +26,30 @@ enum InstructionType {
     A64     = 4,
 };
 
-#define RETURN_REG          RegR0
-#define FIRST_INT_ARG_REG   RegR0
-#define LAST_INT_ARG_REG    RegR7
+#define RETURN_REG                  RegR0
+#define FIRST_INT_ARG_REG           RegR0
+#define LAST_INT_ARG_REG            RegR7
 #define NUM_INT_ARG_REGS\
     ((LAST_INT_ARG_REG - FIRST_INT_ARG_REG) + 1)
-#define FIRST_CALLEE_SAVED_GP_REG RegR19
-#define LAST_CALLEE_SAVED_GP_REG  RegR28
-#define SCRATCH_REG         RegR17
-#define ALT_LOCALS_PTR      RegR21
-#define EH_STACK_SAVE_REG   RegR20
-#define SP_ALLOC_SCRATCH_REG RegR18
-#define CATCH_OBJ_REG       RegR1
 
-#define RETURN_DBL_REG      RegD0
-#define FIRST_CALLEE_SAVED_DBL_REG RegD16
-#define LAST_CALLEE_SAVED_DBL_REG  RegD29
-#define FIRST_CALLEE_SAVED_DBL_REG_NUM 16
-#define LAST_CALLEE_SAVED_DBL_REG_NUM 29
-#define CALLEE_SAVED_DOUBLE_REG_COUNT 16
+#define FIRST_CALLEE_SAVED_GP_REG   RegR19
+#define LAST_CALLEE_SAVED_GP_REG    RegR28
+
+#define UNUSED_REG_FOR_STACK_ALIGN  RegR11
+#define SCRATCH_REG                 RegR17
+#define ALT_LOCALS_PTR              RegR13
+#define EH_STACK_SAVE_REG           RegR14
+#define SP_ALLOC_SCRATCH_REG        RegR15
+#define CATCH_OBJ_REG               RegR1
+
+#define RETURN_DBL_REG              RegD0
+#define FIRST_CALLEE_SAVED_DBL_REG  RegD8
+#define LAST_CALLEE_SAVED_DBL_REG   RegD15
+#define CALLEE_SAVED_DOUBLE_REG_COUNT\
+    ((LAST_CALLEE_SAVED_DBL_REG - FIRST_CALLEE_SAVED_DBL_REG) + 1)
+#define FIRST_CALLEE_SAVED_DBL_REG_NUM  8
+#define LAST_CALLEE_SAVED_DBL_REG_NUM   15
+
 
 // See comment in LowerEntryInstr: even in a global function, we'll home r0 and r1
 #define MIN_HOMED_PARAM_REGS 2
@@ -90,6 +98,8 @@ enum InstructionType {
 #define IS_CONST_0000FFFF(x) (((x) & ~0x0000ffff) == 0)
 #define IS_CONST_000FFFFF(x) (((x) & ~0x000fffff) == 0)
 #define IS_CONST_007FFFFF(x) (((x) & ~0x007fffff) == 0)
+#define IS_CONST_00FFF000(x) (((x) & ~0x00fff000) == 0)
+#define IS_CONST_003F003F(x) (((x) & ~0x003f003f) == 0)
 
 #define IS_CONST_NEG_7(x)    (((x) & ~0x0000003f) == ~0x0000003f)
 #define IS_CONST_NEG_8(x)    (((x) & ~0x0000007f) == ~0x0000007f)
@@ -111,7 +121,8 @@ enum InstructionType {
 #define IS_CONST_UINT10(x)   IS_CONST_000003FF(x)
 #define IS_CONST_UINT12(x)   IS_CONST_00000FFF(x)
 #define IS_CONST_UINT16(x)   IS_CONST_0000FFFF(x)
-
+#define IS_CONST_UINT12LSL12(x) IS_CONST_00FFF000(x)
+#define IS_CONST_UINT6UINT6(x) IS_CONST_003F003F(x)
 
 ///---------------------------------------------------------------------------
 ///
@@ -203,7 +214,6 @@ private:
     bool            CanonicalizeInstr(IR::Instr *instr);
     void            CanonicalizeLea(IR::Instr * instr);
     bool            DecodeMemoryOpnd(IR::Opnd* opnd, ARM64_REGISTER &baseRegResult, ARM64_REGISTER &indexRegResult, BYTE &indexScale, int32 &offset);
-    
     static bool     EncodeLogicalConst(IntConstType constant, DWORD * result, int size);
 
     // General 1-operand instructions (BR, RET)
@@ -214,7 +224,8 @@ private:
 
     // General 3-operand instructions (ADD, AND, SUB, etc) follow a very standard pattern
     template<typename _RegFunc32, typename _RegFunc64> int EmitOp3Register(Arm64CodeEmitter &Emitter, IR::Instr* instr, _RegFunc32 reg32, _RegFunc64 reg64);
-    template<typename _ImmFunc32, typename _ImmFunc64> int EmitOp3Immediate(Arm64CodeEmitter &Emitter, IR::Instr* instr, _ImmFunc32 imm32, _ImmFunc64 imm64);
+    template<typename _RegFunc32, typename _RegFunc64> int EmitOp3RegisterShifted(Arm64CodeEmitter &Emitter, IR::Instr* instr, SHIFT_EXTEND_TYPE shiftType, int shiftAmount, _RegFunc32 reg32, _RegFunc64 reg64);
+        template<typename _ImmFunc32, typename _ImmFunc64> int EmitOp3Immediate(Arm64CodeEmitter &Emitter, IR::Instr* instr, _ImmFunc32 imm32, _ImmFunc64 imm64);
     template<typename _RegFunc32, typename _RegFunc64, typename _ImmFunc32, typename _ImmFunc64> int EmitOp3RegisterOrImmediate(Arm64CodeEmitter &Emitter, IR::Instr* instr, _RegFunc32 reg32, _RegFunc64 reg64, _ImmFunc32 imm32, _ImmFunc64 imm64);
 
     // Load/store operations
@@ -226,7 +237,19 @@ private:
     // Branch operations
     template<typename _Emitter> int EmitUnconditionalBranch(Arm64CodeEmitter &Emitter, IR::Instr* instr, _Emitter emitter);
     int             EmitConditionalBranch(Arm64CodeEmitter &Emitter, IR::Instr* instr, int condition);
+    template<typename _Emitter, typename _Emitter64> int EmitCompareAndBranch(Arm64CodeEmitter &Emitter, IR::Instr* instr, _Emitter emitter, _Emitter64 emitter64);
+    template<typename _Emitter> int EmitTestAndBranch(Arm64CodeEmitter &Emitter, IR::Instr* instr, _Emitter emitter);
 
     // Misc operations
     template<typename _Emitter, typename _Emitter64> int EmitMovConstant(Arm64CodeEmitter &Emitter, IR::Instr* instr, _Emitter emitter, _Emitter64 emitter64);
+    template<typename _Emitter, typename _Emitter64> int EmitBitfield(Arm64CodeEmitter &Emitter, IR::Instr *instr, _Emitter emitter, _Emitter64 emitter64);
+    template<typename _Emitter, typename _Emitter64> int EmitConditionalSelect(Arm64CodeEmitter &Emitter, IR::Instr *instr, int condition, _Emitter emitter, _Emitter64 emitter64);
+
+    // Floating point instructions
+    template<typename _Emitter> int EmitOp2FpRegister(Arm64CodeEmitter &Emitter, IR::Instr *instr, _Emitter emitter);
+    template<typename _Emitter> int EmitOp2FpRegister(Arm64CodeEmitter &Emitter, IR::Opnd* opnd1, IR::Opnd* opnd2, _Emitter emitter);
+    template<typename _Emitter> int EmitOp3FpRegister(Arm64CodeEmitter &Emitter, IR::Instr *instr, _Emitter emitter);
+    template<typename _LoadStoreFunc> int EmitLoadStoreFp(Arm64CodeEmitter &Emitter, IR::Instr* instr, IR::Opnd* memOpnd, IR::Opnd* srcDstOpnd, _LoadStoreFunc loadStore);
+    template<typename _LoadStoreFunc> int EmitLoadStoreFpPair(Arm64CodeEmitter &Emitter, IR::Instr* instr, IR::Opnd* memOpnd, IR::Opnd* srcDst1Opnd, IR::Opnd* srcDst2Opnd, _LoadStoreFunc loadStore);
+    template<typename _Int32Func, typename _Uint32Func, typename _Int64Func, typename _Uint64Func> int EmitConvertToInt(Arm64CodeEmitter &Emitter, IR::Instr* instr, _Int32Func toInt32, _Uint32Func toUint32, _Int64Func toInt64, _Uint64Func toUint64);
 };

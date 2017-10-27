@@ -18,6 +18,7 @@ using namespace Windows::Globalization;
 #ifdef INTL_ICU
 #include <CommonPal.h>
 #include "PlatformAgnostic/IPlatformAgnosticResource.h"
+#include "PlatformAgnostic/Intl.h"
 using namespace PlatformAgnostic::Intl;
 using namespace PlatformAgnostic::Resource;
 #endif
@@ -164,7 +165,10 @@ namespace Js
             }
         }
     };
+#endif
 
+// Defining Finalizable wrappers for Intl data
+#if defined(INTL_WINGLOB)
     class AutoCOMJSObject : public FinalizableObject
     {
         IInspectable *instance;
@@ -199,6 +203,55 @@ namespace Js
         }
 
         IInspectable *GetInstance()
+        {
+            return instance;
+        }
+    };
+
+#elif defined(INTL_ICU)
+
+    template<typename T>
+    class AutoIcuJsObject : public FinalizableObject
+    {
+    private:
+        T *instance;
+
+    public:
+        DEFINE_VTABLE_CTOR_NOBASE(AutoIcuJsObject<T>);
+
+        AutoIcuJsObject(T *object)
+            : instance(object)
+        { }
+
+        static AutoIcuJsObject<T> * New(Recycler *recycler, T *object)
+        {
+            return RecyclerNewFinalized(recycler, AutoIcuJsObject<T>, object);
+        }
+
+        void Finalize(bool isShutdown) override
+        {
+        }
+
+        void Dispose(bool isShutdown) override
+        {
+            if (!isShutdown)
+            {
+                // Here we use Cleanup() because we can't rely on delete (not dealing with virtual destructors).
+                // The template thus requires that the type implement the Cleanup function.
+                instance->Cleanup(); // e.g. deletes the object held in the IPlatformAgnosticResource
+
+                // REVIEW (doilij): Is cleanup in this way necessary or are the trivial destructors enough, assuming Cleanup() has been called?
+                // Note: delete here introduces a build break on Linux complaining of non-virtual dtor
+                // delete instance; // deletes the instance itself
+                // instance = nullptr;
+            }
+        }
+
+        void Mark(Recycler *recycler) override
+        {
+        }
+
+        T * GetInstance()
         {
             return instance;
         }
@@ -866,23 +919,11 @@ namespace Js
         }
 
         Assert(numberFormatter);
-        // REVIEW (doilij): AutoPtr will call delete on IPlatformAgnosticResource and complain of non-virtual dtor. There are no IfFailThrowHr so is this still necessary?
-        // TODO (doilij): If necessary, introduce an PlatformAgnosticResourceAutoPtr that calls Cleanup() instead of delete on the pointer.
-        // AutoPtr<IPlatformAgnosticResource> numberFormatterGuard(numberFormatter);
-
-        // TODO (doilij): Render signed zero.
-
-        bool isDecimalPointAlwaysDisplayed = false;
-        bool useGrouping = true;
-
-        if (GetTypedPropertyBuiltInFrom(options, __isDecimalPointAlwaysDisplayed, JavascriptBoolean))
-        {
-            isDecimalPointAlwaysDisplayed = JavascriptBoolean::FromVar(propertyValue)->GetValue();
-        }
 
         if (GetTypedPropertyBuiltInFrom(options, __useGrouping, JavascriptBoolean))
         {
-            useGrouping = JavascriptBoolean::FromVar(propertyValue)->GetValue();
+            bool useGrouping = JavascriptBoolean::FromVar(propertyValue)->GetValue();
+            SetNumberFormatGroupingUsed(numberFormatter, useGrouping);
         }
 
         // Numeral system is in the locale and is therefore already set on the icu::NumberFormat
@@ -932,9 +973,6 @@ namespace Js
         // Set the object as a cache
         auto *autoObject = AutoIcuJsObject<IPlatformAgnosticResource>::New(scriptContext->GetRecycler(), numberFormatter);
         options->SetInternalProperty(Js::InternalPropertyIds::HiddenObject, autoObject, Js::PropertyOperationFlags::PropertyOperation_None, NULL);
-
-        // clear the pointer so it is not freed when numberFormatterGuard goes out of scope
-        // numberFormatterGuard.setPointer(nullptr);
 
         return scriptContext->GetLibrary()->GetUndefined();
 #else
@@ -1665,41 +1703,53 @@ namespace Js
     */
     Var IntlEngineInterfaceExtensionObject::EntryIntl_RegisterBuiltInFunction(RecyclableObject* function, CallInfo callInfo, ...)
     {
+        // Don't put this in a header or add it to the namespace even in this file. Keep it to the minimum scope needed.
+        enum class IntlBuiltInFunctionID : int32 {
+            Min = 0,
+            DateToLocaleString = Min,
+            DateToLocaleDateString,
+            DateToLocaleTimeString,
+            NumberToLocaleString,
+            StringLocaleCompare,
+            Max
+        };
+
         EngineInterfaceObject_CommonFunctionProlog(function, callInfo);
 
-        //This function will only be used during the construction of the Intl object, hence Asserts are in place.
+        // This function will only be used during the construction of the Intl object, hence Asserts are in place.
         Assert(args.Info.Count >= 3 && JavascriptFunction::Is(args.Values[1]) && TaggedInt::Is(args.Values[2]));
 
         JavascriptFunction *func = JavascriptFunction::FromVar(args.Values[1]);
         int32 id = TaggedInt::ToInt32(args.Values[2]);
+        Assert(id >= (int32)IntlBuiltInFunctionID::Min && id < (int32)IntlBuiltInFunctionID::Max);
 
-        Assert(id >= 0 && id < 5);
         EngineInterfaceObject* nativeEngineInterfaceObj = scriptContext->GetLibrary()->GetEngineInterfaceObject();
         IntlEngineInterfaceExtensionObject* extensionObject = static_cast<IntlEngineInterfaceExtensionObject*>(nativeEngineInterfaceObj->GetEngineExtension(EngineInterfaceExtensionKind_Intl));
 
-        switch (id)
+        IntlBuiltInFunctionID functionID = static_cast<IntlBuiltInFunctionID>(id);
+        switch (functionID)
         {
-        case 0:
+        case IntlBuiltInFunctionID::DateToLocaleString:
             extensionObject->dateToLocaleString = func;
             break;
-        case 1:
+        case IntlBuiltInFunctionID::DateToLocaleDateString:
             extensionObject->dateToLocaleDateString = func;
             break;
-        case 2:
+        case IntlBuiltInFunctionID::DateToLocaleTimeString:
             extensionObject->dateToLocaleTimeString = func;
             break;
-        case 3:
+        case IntlBuiltInFunctionID::NumberToLocaleString:
             extensionObject->numberToLocaleString = func;
             break;
-        case 4:
+        case IntlBuiltInFunctionID::StringLocaleCompare:
             extensionObject->stringLocaleCompare = func;
             break;
         default:
-            Assert(false);//Shouldn't hit here, the previous assert should catch this.
+            AssertMsg(false, "functionID was not one of the allowed values. The previous assert should catch this.");
             break;
         }
 
-        //Don't need to return anything
+        // Don't need to return anything
         return scriptContext->GetLibrary()->GetUndefined();
     }
 

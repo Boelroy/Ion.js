@@ -867,6 +867,125 @@ var tests = [
             }
             foo('arguments');
         }
+    },
+    {
+        name: "Global 'this' binding captured by strict-mode arrow",
+        body: function() {
+            WScript.LoadScript(`"use strict";
+                assert.areEqual(this, (() => this)(), "Lambda should load the global 'this' value itself via LdThis (not StrictLdThis)");
+            `);
+            
+            WScript.LoadScript(`
+                assert.areEqual(this, (() => { "use strict"; return this; })(), "Lambda which has a 'use strict' clause inside");
+            `);
+            
+            WScript.LoadScript(`"use strict";
+                assert.areEqual('object', typeof (() => this)(), "Verify lambda can load global 'this' value even if the global body itself does not have a 'this' binding");
+            `);
+        }
+    },
+    {
+        name: "PidRefStack might be out-of-order when we try to add special symbol var decl",
+        body: function() {
+            // Failure causes an assert to fire
+            WScript.LoadScript(`(a = function() { this }, b = (this)) => {}`);
+            assert.throws(() => WScript.LoadScript(`[ a = function () { this; } ((this)) = 1 ] = []`), ReferenceError, "Not a valid destructuring assignment but should not fire assert", "Invalid left-hand side in assignment");
+        }
+    },
+    {
+        name: "Non-split scope with default arguments referencing special names",
+        body: function() {
+            var _this = {}
+            function foo(a = this) {
+                eval('');
+                assert.areEqual(_this, a, "Correct default value was assigned");
+                assert.areEqual(_this, this, "Regular 'this' binding is correct");
+            }
+            foo.call(_this)
+            
+            function bar(a = this) {
+                eval('');
+                assert.areEqual(_this, a, "Correct default value was assigned");
+                assert.areEqual(_this, this, "Regular 'this' binding is correct");
+                function b() { return 'b'; }
+                assert.areEqual('b', b(), "Nested functions are bound to the correct slot");
+            }
+            bar.call(_this)
+
+            function baz(a = this, c = function() { return 'c'; }) {
+                eval('');
+                assert.areEqual(_this, a, "Correct default value was assigned");
+                assert.areEqual(_this, this, "Regular 'this' binding is correct");
+                function b() { return 'b'; }
+                assert.areEqual('b', b(), "Nested functions are bound to the correct slot");
+                assert.areEqual('c', c(), "Function expression in param scope default argument is bound to the correct slot");
+            }
+            baz.call(_this)
+
+            function baz2(a = this, c = function() { function nested() { return 'c' }; return nested; }) {
+                eval('');
+                assert.areEqual(_this, a, "Correct default value was assigned");
+                assert.areEqual(_this, this, "Regular 'this' binding is correct");
+                function b() { return 'b'; }
+                assert.areEqual('b', b(), "Nested functions are bound to the correct slot");
+                assert.areEqual('c', c()(), "Function decl nested in function expression assigned to default argument");
+            }
+            baz2.call(_this)
+
+            function baz3(c = function() { return 'c'; }, a = this) {
+                eval('');
+                assert.areEqual(_this, a, "Correct default value was assigned");
+                assert.areEqual(_this, this, "Regular 'this' binding is correct");
+                function b() { return 'b'; }
+                assert.areEqual('b', b(), "Nested functions are bound to the correct slot");
+                assert.areEqual('c', c(), "Function expression in param scope default argument is bound to the correct slot");
+            }
+            baz3.call(_this)
+
+            function bat(a = this, c = () => 'c') {
+                eval('');
+                assert.areEqual(_this, a, "Correct default value was assigned");
+                assert.areEqual(_this, this, "Regular 'this' binding is correct");
+                function b() { return 'b'; }
+                assert.areEqual('b', b(), "Nested functions are bound to the correct slot");
+                assert.areEqual('c', c(), "Lambda expression in param scope default argument is bound to the correct slot");
+            }
+            bat.call(_this)
+
+            function bat2(a = this, c = () => () => 'c') {
+                eval('');
+                assert.areEqual(_this, a, "Correct default value was assigned");
+                assert.areEqual(_this, this, "Regular 'this' binding is correct");
+                function b() { return 'b'; }
+                assert.areEqual('b', b(), "Nested functions are bound to the correct slot");
+                assert.areEqual('c', c()(), "Lambda function decl nested in lambda expression assigned to default argument");
+            }
+            bat2.call(_this)
+
+            function bat3(c = () => () => 'c', a = this) {
+                eval('');
+                assert.areEqual(_this, a, "Correct default value was assigned");
+                assert.areEqual(_this, this, "Regular 'this' binding is correct");
+                function b() { return 'b'; }
+                assert.areEqual('b', b(), "Nested functions are bound to the correct slot");
+                assert.areEqual('c', c()(), "Lambda function decl nested in lambda expression assigned to default argument");
+            }
+            bat3.call(_this)
+        }
+    },
+    {
+        name: "Loading 'this' binding as a call target",
+        body: function() {
+            assert.throws(() => WScript.LoadScript(`with({}) { this() }`), TypeError, "Loading global 'this' binding as a call target should always throw - 'this' is an object", "Function expected");
+            assert.throws(() => this(), TypeError, "Capturing function 'this' binding and emitting as a call target should throw if 'this' is not a function", "Function expected");
+        }
+    },
+    {
+        name: "Class expression as call target without 'this' binding",
+        body: function() {
+            assert.throws(() => WScript.LoadScript(`(class classExpr {}())`), TypeError, "Class expression called at global scope", "Class constructor cannot be called without the new keyword");
+            assert.throws(() => WScript.LoadScript(`(() => (class classExpr {}()))()`), TypeError, "Class expression called in global lambda", "Class constructor cannot be called without the new keyword");
+        }
     }
 ]
 

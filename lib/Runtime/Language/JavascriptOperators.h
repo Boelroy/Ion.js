@@ -102,12 +102,10 @@ namespace Js
     {
     // Methods
     public:
-        static void FreeTemp(Var aValue);
-
         static BOOL IsArray(Var instanceVar);
         static BOOL IsConstructor(Var instanceVar);
         static BOOL IsConcatSpreadable(Var instanceVar);
-        static Var ToObject(Var aRight,ScriptContext* scriptContext);
+        static RecyclableObject* ToObject(Var aRight,ScriptContext* scriptContext);
         static Var ToWithObject(Var aRight, ScriptContext* scriptContext);
         static Var OP_LdCustomSpreadIteratorList(Var aRight, ScriptContext* scriptContext);
         static Var ToNumber(Var aRight,ScriptContext* scriptContext);
@@ -141,20 +139,17 @@ namespace Js
         static BOOL Greater(Var aLeft, Var aRight,ScriptContext* scriptContext);
         static BOOL Greater_Full(Var aLeft, Var aRight,ScriptContext* scriptContext);
         static BOOL GreaterEqual(Var aLeft, Var aRight,ScriptContext* scriptContext);
-        static BOOL GreaterEqual_Full(Var aLeft, Var aRight,ScriptContext* scriptContext);
         static BOOL Less(Var aLeft, Var aRight,ScriptContext* scriptContext);
         static BOOL Less_Full(Var aLeft, Var aRight,ScriptContext* scriptContext);
         static BOOL LessEqual(Var aLeft, Var aRight,ScriptContext* scriptContext);
-        static BOOL LessEqual_Full(Var aLeft, Var aRight,ScriptContext* scriptContext);
         static BOOL NotEqual(Var aLeft, Var aRight,ScriptContext* scriptContext);
-        static BOOL NotEqual_Full(Var aLeft, Var aRight,ScriptContext* scriptContext);
         static BOOL StrictEqual(Var aLeft, Var aRight,ScriptContext* scriptContext);
         static BOOL StrictEqualString(Var aLeft, Var aRight);
         static BOOL StrictEqualEmptyString(Var aLeft);
         static BOOL StrictEqualSIMD(Var aLeft, Var aRight, ScriptContext* scriptContext);
         static BOOL NotStrictEqual(Var aLeft, Var aRight,ScriptContext* scriptContext);
 
-        static BOOL HasOwnProperty(Var instance, PropertyId propertyId, ScriptContext * requestContext);
+        static BOOL HasOwnProperty(Var instance, PropertyId propertyId, _In_ ScriptContext * requestContext, _In_opt_ PropertyString * propString);
         static BOOL GetOwnProperty(Var instance, PropertyId propertyId, Var* value, ScriptContext* requestContext, PropertyValueInfo * propertyValueInfo);
         static BOOL GetOwnAccessors(Var instance, PropertyId propertyId, Var* getter, Var* setter, ScriptContext * requestContext);
         static BOOL EnsureProperty(Var instance, PropertyId propertyId);
@@ -173,13 +168,10 @@ namespace Js
         static BOOL GetOwnPropertyDescriptor(RecyclableObject* obj, JavascriptString* propertyKey, ScriptContext* scriptContext, PropertyDescriptor* propertyDescriptor);
         static BOOL IsPropertyUnscopable (Var instanceVar, PropertyId propertyId);
         static BOOL IsPropertyUnscopable (Var instanceVar, JavascriptString *propertyString);
-        template<bool unscopables>
-        static BOOL HasProperty_Impl(RecyclableObject* instance, PropertyId propertyId);
         static BOOL HasPropertyUnscopables(RecyclableObject* instance, PropertyId propertyId);
         static BOOL HasProperty(RecyclableObject* instance, PropertyId propertyId);
         static BOOL HasRootProperty(RecyclableObject* instance, PropertyId propertyId);
         static BOOL HasProxyOrPrototypeInlineCacheProperty(RecyclableObject* instance, PropertyId propertyId);
-        static BOOL HasProxyInPrototypeChain(RecyclableObject* instance);
         template<typename PropertyKeyType>
         static BOOL GetPropertyWPCache(Var instance, RecyclableObject* propertyObject, PropertyKeyType propertyKey, Var* value, ScriptContext* requestContext, _Inout_ PropertyValueInfo * info);
         static BOOL GetPropertyUnscopable(Var instance, RecyclableObject* propertyObject, PropertyId propertyId, Var* value, ScriptContext* requestContext, PropertyValueInfo* info=NULL);
@@ -217,6 +209,11 @@ namespace Js
         static BOOL DeleteProperty_Impl(RecyclableObject* instance, PropertyId propertyId, PropertyOperationFlags propertyOperationFlags = PropertyOperation_None);
         static TypeId GetTypeId(Var instance);
         static TypeId GetTypeIdNoCheck(Var instance);
+        template <typename T>
+        __forceinline static T* TryFromVar(Var value)
+        {
+            return T::Is(value) ? T::UnsafeFromVar(value) : nullptr;
+        }
         static BOOL IsObject(Var instance);
         static BOOL IsExposedType(TypeId typeId);
         static BOOL IsObjectType(TypeId typeId);
@@ -265,7 +262,6 @@ namespace Js
         static BOOL DeleteItem(RecyclableObject* instance, uint32 index, PropertyOperationFlags propertyOperationFlags = PropertyOperation_None);
         static BOOL DeleteItem(RecyclableObject* instance, uint64 index, PropertyOperationFlags propertyOperationFlags = PropertyOperation_None);
 
-        static Var Construct(RecyclableObject* constructor, const Arguments args, ScriptContext* scriptContext);
         static RecyclableObject* CreateFromConstructor(RecyclableObject* constructor, ScriptContext* scriptContext);
         static RecyclableObject* OrdinaryCreateFromConstructor(RecyclableObject* constructor, RecyclableObject* obj, DynamicObject* intrinsicProto, ScriptContext* scriptContext);
 
@@ -342,7 +338,7 @@ namespace Js
         static BOOL OP_SetElementI_JIT(Var instance, Var aElementIndex, Var aValue, ScriptContext* scriptContext, PropertyOperationFlags flags = PropertyOperation_None);
 
         static BOOL OP_SetElementI_UInt32(Var instance, uint32 aElementIndex, Var aValue, ScriptContext* scriptContext, PropertyOperationFlags flags = PropertyOperation_None);
-        static BOOL OP_SetElementI_Int32(Var instance, int aElementIndex, Var aValue, ScriptContext* scriptContext, PropertyOperationFlags flags = PropertyOperation_None);
+        static BOOL OP_SetElementI_Int32(Var instance, int32 aElementIndex, Var aValue, ScriptContext* scriptContext, PropertyOperationFlags flags = PropertyOperation_None);
         static BOOL SetElementIHelper(Var receiver, RecyclableObject* object, Var index, Var value, ScriptContext* scriptContext, PropertyOperationFlags flags);
         static BOOL OP_SetNativeIntElementI(Var instance, Var aElementIndex, int32 aValue, ScriptContext* scriptContext, PropertyOperationFlags flags = PropertyOperation_None);
         static BOOL OP_SetNativeIntElementI_UInt32(Var instance, uint32 aElementIndex, int32 aValue, ScriptContext* scriptContext, PropertyOperationFlags flags = PropertyOperation_None);
@@ -352,7 +348,7 @@ namespace Js
         static BOOL OP_SetNativeFloatElementI_Int32(Var instance, int aElementIndex, ScriptContext* scriptContext, PropertyOperationFlags flags, double value);
         static Var OP_DeleteElementI(Var instance, Var aElementIndex, ScriptContext* scriptContext, PropertyOperationFlags propertyOperationFlags = PropertyOperation_None);
         static Var OP_DeleteElementI_UInt32(Var instance, uint32 aElementIndex, ScriptContext* scriptContext, PropertyOperationFlags propertyOperationFlags = PropertyOperation_None);
-        static Var OP_DeleteElementI_Int32(Var instance, int aElementIndex, ScriptContext* scriptContext, PropertyOperationFlags propertyOperationFlags = PropertyOperation_None);
+        static Var OP_DeleteElementI_Int32(Var instance, int32 aElementIndex, ScriptContext* scriptContext, PropertyOperationFlags propertyOperationFlags = PropertyOperation_None);
         static BOOL OP_Memset(Var instance, int32 start, Var value, int32 length, ScriptContext* scriptContext);
         static BOOL OP_Memcopy(Var dstInstance, int32 dstStart, Var srcInstance, int32 srcStart, int32 length, ScriptContext* scriptContext);
         static Var OP_GetLength(Var instance, ScriptContext* scriptContext);
@@ -460,7 +456,7 @@ namespace Js
         static FrameDisplay* OP_LdStrictInnerFrameDisplay(void *argHead, void *argEnv, ScriptContext* scriptContext);
         static FrameDisplay* OP_LdStrictInnerFrameDisplayNoParent(void *argHead, ScriptContext* scriptContext);
         static void CheckInnerFrameDisplayArgument(void *argHead);
-        static Var LoadHeapArguments(JavascriptFunction *funcCallee, unsigned int count, Var *pParams, Var frameObj, Var vArray, ScriptContext* scriptContext, bool nonSimpleParamList);
+        static Var LoadHeapArguments(JavascriptFunction *funcCallee, uint32 count, Var *pParams, Var frameObj, Var vArray, ScriptContext* scriptContext, bool nonSimpleParamList);
         static Var LoadHeapArgsCached(JavascriptFunction *funcCallee, uint32 actualsCount, uint32 formalsCount, Var *pParams, Var frameObj, ScriptContext* scriptContext, bool nonSimpleParamList);
         static Var FillScopeObject(JavascriptFunction *funcCallee, uint32 actualsCount, uint32 formalsCount, Var frameObj, Var * paramAddr, Js::PropertyIdArray *propIds, HeapArgumentsObject * argsObj, ScriptContext * scriptContext, bool nonSimpleParamList, bool useCachedScope);
         static HeapArgumentsObject *CreateHeapArguments(JavascriptFunction *funcCallee, uint32 actualsCount, uint32 formalsCount, Var frameObj, ScriptContext* scriptContext);

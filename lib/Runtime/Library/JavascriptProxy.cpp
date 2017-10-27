@@ -551,7 +551,7 @@ namespace Js
         };
         auto getPropertyId = [&]()->PropertyId{
             const PropertyRecord* propertyRecord;
-            requestContext->GetOrAddPropertyRecord(propertyNameString->GetString(), propertyNameString->GetLength(), &propertyRecord);
+            requestContext->GetOrAddPropertyRecord(propertyNameString, &propertyRecord);
             return propertyRecord->GetPropertyId();
         };
         PropertyDescriptor result;
@@ -692,7 +692,7 @@ namespace Js
     BOOL JavascriptProxy::SetProperty(JavascriptString* propertyNameString, Var value, PropertyOperationFlags flags, PropertyValueInfo* info)
     {
         const PropertyRecord* propertyRecord;
-        GetScriptContext()->GetOrAddPropertyRecord(propertyNameString->GetString(), propertyNameString->GetLength(), &propertyRecord);
+        GetScriptContext()->GetOrAddPropertyRecord(propertyNameString, &propertyRecord);
         return SetProperty(propertyRecord->GetPropertyId(), value, flags, info);
     }
 
@@ -1282,7 +1282,7 @@ namespace Js
         {
             itemVar = resultArray->DirectGetItem(i);
             AssertMsg(JavascriptSymbol::Is(itemVar) || JavascriptString::Is(itemVar), "Invariant check during ownKeys proxy trap should make sure we only get property key here. (symbol or string primitives)");
-            JavascriptConversion::ToPropertyKey(itemVar, scriptContext, &propertyRecord);
+            JavascriptConversion::ToPropertyKey(itemVar, scriptContext, &propertyRecord, nullptr);
             PropertyId propertyId = propertyRecord->GetPropertyId();
             if (JavascriptObject::GetOwnPropertyDescriptorHelper(obj, propertyId, scriptContext, propertyDescriptor))
             {
@@ -1335,7 +1335,7 @@ namespace Js
             {
                 itemVar = resultArray->DirectGetItem(i);
                 AssertMsg(JavascriptSymbol::Is(itemVar) || JavascriptString::Is(itemVar), "Invariant check during ownKeys proxy trap should make sure we only get property key here. (symbol or string primitives)");
-                JavascriptConversion::ToPropertyKey(itemVar, scriptContext, &propertyRecord);
+                JavascriptConversion::ToPropertyKey(itemVar, scriptContext, &propertyRecord, nullptr);
                 PropertyId propertyId = propertyRecord->GetPropertyId();
                 JavascriptObject::DefineOwnPropertyHelper(obj, propertyId, propertyDescriptor, scriptContext);
             }
@@ -1363,7 +1363,7 @@ namespace Js
             {
                 itemVar = resultArray->DirectGetItem(i);
                 AssertMsg(JavascriptSymbol::Is(itemVar) || JavascriptString::Is(itemVar), "Invariant check during ownKeys proxy trap should make sure we only get property key here. (symbol or string primitives)");
-                JavascriptConversion::ToPropertyKey(itemVar, scriptContext, &propertyRecord);
+                JavascriptConversion::ToPropertyKey(itemVar, scriptContext, &propertyRecord, nullptr);
                 PropertyId propertyId = propertyRecord->GetPropertyId();
                 PropertyDescriptor propertyDescriptor;
                 if (JavascriptObject::GetOwnPropertyDescriptorHelper(obj, propertyId, scriptContext, propertyDescriptor))
@@ -1778,7 +1778,7 @@ namespace Js
     BOOL JavascriptProxy::SetPropertyTrap(Var receiver, SetPropertyTrapKind setPropertyTrapKind, Js::JavascriptString * propertyNameString, Var newValue, ScriptContext* requestContext)
     {
         const PropertyRecord* propertyRecord;
-        requestContext->GetOrAddPropertyRecord(propertyNameString->GetString(), propertyNameString->GetLength(), &propertyRecord);
+        requestContext->GetOrAddPropertyRecord(propertyNameString, &propertyRecord);
         return SetPropertyTrap(receiver, setPropertyTrapKind, propertyRecord->GetPropertyId(), newValue, requestContext);
 
     }
@@ -2060,6 +2060,7 @@ namespace Js
 
         BOOL hasOverridingNewTarget = callInfo.Flags & CallFlags_NewTarget;
         bool isCtorSuperCall = (callInfo.Flags & CallFlags_New) && args[0] != nullptr && RecyclableObject::Is(args[0]);
+        bool isNewCall = callInfo.Flags & CallFlags_New || callInfo.Flags & CallFlags_NewTarget;
 
         AssertMsg(args.Info.Count > 0, "Should always have implicit 'this'");
         if (!JavascriptProxy::Is(function))
@@ -2126,7 +2127,16 @@ namespace Js
                 args.Values[0] = newThisObject;
             }
 
-            ushort newCount = (ushort)(args.Info.Count + 1);
+            ushort newCount = (ushort)args.Info.Count;
+            if (isNewCall)
+            {
+                newCount++;
+                if (!newCount)
+                {
+                    ::Math::DefaultOverflowPolicy();
+                }
+            }
+
             Var* newValues;
             const unsigned STACK_ARGS_ALLOCA_THRESHOLD = 8; // Number of stack args we allow before using _alloca
             Var stackArgs[STACK_ARGS_ALLOCA_THRESHOLD];
@@ -2139,14 +2149,21 @@ namespace Js
             {
                 newValues = stackArgs;
             }
-            CallInfo calleeInfo((CallFlags)(args.Info.Flags | CallFlags_ExtraArg | CallFlags_NewTarget), newCount);
+            CallInfo calleeInfo((CallFlags)(args.Info.Flags), newCount);
+            if (isNewCall)
+            {
+                calleeInfo.Flags = (CallFlags)(calleeInfo.Flags | CallFlags_ExtraArg | CallFlags_NewTarget);
+            }
 
             for (uint argCount = 0; argCount < args.Info.Count; argCount++)
             {
                 newValues[argCount] = args.Values[argCount];
             }
 #pragma prefast(suppress:6386)
+            if (isNewCall)
+            {
             newValues[args.Info.Count] = newTarget;
+            }
 
             Js::Arguments arguments(calleeInfo, newValues);
             Var aReturnValue = JavascriptFunction::CallFunction<true>(targetObj, targetObj->GetEntryPoint(), arguments);
@@ -2400,7 +2417,7 @@ namespace Js
             {
                 element = targetKeys->DirectGetItem(i);
                 AssertMsg(JavascriptSymbol::Is(element) || JavascriptString::Is(element), "Invariant check during ownKeys proxy trap should make sure we only get property key here. (symbol or string primitives)");
-                JavascriptConversion::ToPropertyKey(element, requestContext, &propertyRecord);
+                JavascriptConversion::ToPropertyKey(element, requestContext, &propertyRecord, nullptr);
                 propertyId = propertyRecord->GetPropertyId();
 
                 if (propertyId == Constants::NoProperty)

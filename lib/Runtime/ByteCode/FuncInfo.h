@@ -102,6 +102,7 @@ public:
     Js::RegSlot undefinedConstantRegister; // location, if any, of enregistered undefined constant
     Js::RegSlot trueConstantRegister; // location, if any, of enregistered true constant
     Js::RegSlot falseConstantRegister; // location, if any, of enregistered false constant
+    Js::RegSlot thisConstantRegister; // location, if any, of enregistered 'this' constant
 
 private:
     Js::RegSlot envRegister; // location, if any, of the closure environment
@@ -119,6 +120,7 @@ public:
     Js::RegSlot firstThunkArgReg;
     short thunkArgCount;
     short staticFuncId;
+    Js::FunctionInfo::Attributes originalAttributes;
 
     uint callsEval : 1;
     uint childCallsEval : 1;
@@ -181,6 +183,7 @@ public:
     FuncInfo(
         const char16 *name,
         ArenaAllocator *alloc,
+        ByteCodeGenerator *byteCodeGenerator,
         Scope *paramScope,
         Scope *bodyScope,
         ParseNode *pnode,
@@ -466,6 +469,7 @@ public:
     BOOL IsLambda() const;
     BOOL IsClassConstructor() const;
     BOOL IsBaseClassConstructor() const;
+    BOOL IsDerivedClassConstructor() const;
 
     void RemoveTargetStmt(ParseNode* pnodeStmt) {
         targetStatements.Remove(pnodeStmt);
@@ -503,6 +507,15 @@ public:
         Js::RegSlot reg = constReg? NextConstRegister() : NextVarRegister();
         this->envRegister = reg;
         return reg;
+    }
+
+    Js::RegSlot AssignThisConstRegister()
+    {
+        if (this->thisConstantRegister == Js::Constants::NoRegister)
+        {
+            this->thisConstantRegister = this->NextVarRegister();
+        }
+        return this->thisConstantRegister;
     }
 
     Js::RegSlot AssignNullConstRegister()

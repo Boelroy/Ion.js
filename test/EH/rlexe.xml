@@ -129,4 +129,35 @@
       <files>tryfinallybug1.js</files>
     </default>
   </test>
+  <test>
+    <default>
+      <files>tfinlinebug.js</files>
+      <compile-flags> -force:inline </compile-flags>
+    </default>
+  </test>
+  <test>
+    <default>
+      <files>inlinestackwalkbug.js</files>
+    </default>
+  </test>
+  <test>
+    <default>
+      <files>nestedinlinestackwalkbug.js</files>
+    </default>
+  </test>
+  <test>
+    <default>
+      <files>tryfinallyinlinebug.js</files>
+    </default>
+  </test>
+  <test>
+    <default>
+      <files>asyncintrystackwalkbug.js</files>
+    </default>
+  </test>
+  <test>
+    <default>
+      <files>ehinlinearmbug.js</files>
+    </default>
+  </test>
 </regress-exe>

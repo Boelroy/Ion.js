@@ -101,12 +101,12 @@ namespace Js
 
 #ifndef GlobalBuiltIn
 #define GlobalBuiltIn(global, method) \
-    NoProfileFunctionInfo EngineInterfaceObject::EntryInfo::Intl_BuiltIn_##global##_##method##(FORCE_NO_WRITE_BARRIER_TAG(global##::##method##)); \
+    NoProfileFunctionInfo EngineInterfaceObject::EntryInfo::BuiltIn_##global##_##method##(FORCE_NO_WRITE_BARRIER_TAG(global##::##method##)); \
 
 #define GlobalBuiltInConstructor(global)
 
 #define BuiltInRaiseException(exceptionType, exceptionID) \
-    NoProfileFunctionInfo EngineInterfaceObject::EntryInfo::Intl_BuiltIn_raise##exceptionID(FORCE_NO_WRITE_BARRIER_TAG(EngineInterfaceObject::EntryIntl_BuiltIn_raise##exceptionID)); \
+    NoProfileFunctionInfo EngineInterfaceObject::EntryInfo::BuiltIn_raise##exceptionID(FORCE_NO_WRITE_BARRIER_TAG(EngineInterfaceObject::Entry_BuiltIn_raise##exceptionID)); \
 
 #define BuiltInRaiseException1(exceptionType, exceptionID) BuiltInRaiseException(exceptionType, exceptionID)
 #define BuiltInRaiseException2(exceptionType, exceptionID) BuiltInRaiseException(exceptionType, exceptionID)
@@ -139,11 +139,17 @@ namespace Js
 
     EngineInterfaceObject* EngineInterfaceObject::FromVar(Var aValue)
     {
-        AssertMsg(Is(aValue), "aValue is actually an EngineInterfaceObject");
+        AssertOrFailFastMsg(Is(aValue), "aValue is actually an EngineInterfaceObject");
 
-        return static_cast<EngineInterfaceObject *>(RecyclableObject::FromVar(aValue));
+        return static_cast<EngineInterfaceObject *>(aValue);
     }
 
+    EngineInterfaceObject* EngineInterfaceObject::UnsafeFromVar(Var aValue)
+    {
+        AssertMsg(Is(aValue), "aValue is actually an EngineInterfaceObject");
+
+        return static_cast<EngineInterfaceObject *>(aValue);
+    }
     void EngineInterfaceObject::Initialize()
     {
         Recycler* recycler = this->GetRecycler();
@@ -197,12 +203,12 @@ namespace Js
 
 #ifndef GlobalBuiltIn
 #define GlobalBuiltIn(global, method) \
-    library->AddFunctionToLibraryObject(commonNativeInterfaces, Js::PropertyIds::builtIn##global##method, &EngineInterfaceObject::EntryInfo::Intl_BuiltIn_##global##_##method##, 1); \
+    library->AddFunctionToLibraryObject(commonNativeInterfaces, Js::PropertyIds::builtIn##global##method, &EngineInterfaceObject::EntryInfo::BuiltIn_##global##_##method##, 1); \
 
 #define GlobalBuiltInConstructor(global) SetPropertyOn(commonNativeInterfaces, Js::PropertyIds::##global##, library->Get##global##Constructor());
 
 #define BuiltInRaiseException(exceptionType, exceptionID) \
-    library->AddFunctionToLibraryObject(commonNativeInterfaces, Js::PropertyIds::raise##exceptionID, &EngineInterfaceObject::EntryInfo::Intl_BuiltIn_raise##exceptionID, 1); \
+    library->AddFunctionToLibraryObject(commonNativeInterfaces, Js::PropertyIds::raise##exceptionID, &EngineInterfaceObject::EntryInfo::BuiltIn_raise##exceptionID, 1); \
 
 #define BuiltInRaiseException1(exceptionType, exceptionID) BuiltInRaiseException(exceptionType, exceptionID)
 #define BuiltInRaiseException2(exceptionType, exceptionID) BuiltInRaiseException(exceptionType, exceptionID)
@@ -326,7 +332,7 @@ namespace Js
 #define GlobalBuiltInConstructor(global)
 
 #define BuiltInRaiseException(exceptionType, exceptionID) \
-    Var EngineInterfaceObject::EntryIntl_BuiltIn_raise##exceptionID(RecyclableObject *function, CallInfo callInfo, ...) \
+    Var EngineInterfaceObject::Entry_BuiltIn_raise##exceptionID(RecyclableObject *function, CallInfo callInfo, ...) \
     { \
         EngineInterfaceObject_CommonFunctionProlog(function, callInfo); \
         \
@@ -334,7 +340,7 @@ namespace Js
     }
 
 #define BuiltInRaiseException1(exceptionType, exceptionID) \
-    Var EngineInterfaceObject::EntryIntl_BuiltIn_raise##exceptionID(RecyclableObject *function, CallInfo callInfo, ...) \
+    Var EngineInterfaceObject::Entry_BuiltIn_raise##exceptionID(RecyclableObject *function, CallInfo callInfo, ...) \
     { \
         EngineInterfaceObject_CommonFunctionProlog(function, callInfo); \
         \
@@ -347,7 +353,7 @@ namespace Js
     }
 
 #define BuiltInRaiseException2(exceptionType, exceptionID) \
-    Var EngineInterfaceObject::EntryIntl_BuiltIn_raise##exceptionID(RecyclableObject *function, CallInfo callInfo, ...) \
+    Var EngineInterfaceObject::Entry_BuiltIn_raise##exceptionID(RecyclableObject *function, CallInfo callInfo, ...) \
     { \
         EngineInterfaceObject_CommonFunctionProlog(function, callInfo); \
         \
@@ -360,7 +366,7 @@ namespace Js
     }
 
 #define BuiltInRaiseException3(exceptionType, exceptionID) \
-    Var EngineInterfaceObject::EntryIntl_BuiltIn_raise##exceptionID##_3(RecyclableObject *function, CallInfo callInfo, ...) \
+    Var EngineInterfaceObject::Entry_BuiltIn_raise##exceptionID##_3(RecyclableObject *function, CallInfo callInfo, ...) \
     { \
         EngineInterfaceObject_CommonFunctionProlog(function, callInfo); \
         \

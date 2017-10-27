@@ -150,6 +150,8 @@ enum
     NEONREG_INVALID = 99,
 };
 
+#define LAST_FLOAT_REG_ENCODE NEONREG_D31
+
 //
 // Condition code types.
 //
@@ -568,7 +570,7 @@ public:
     
     void
     SetTarget(
-        ULONG OffsetFromEmitterBase
+        INT32 OffsetFromEmitterBase
         )
     {
         NT_ASSERT(OffsetFromEmitterBase % 4 == 0);
@@ -592,7 +594,7 @@ public:
     {
         ULONG_PTR Delta = ULONG_PTR(Target) - ULONG_PTR(Emitter.GetEmitAreaBase());
         NT_ASSERT(INT32(Delta) == Delta);
-        SetTarget(ULONG(Delta));
+        SetTarget(INT32(Delta));
         Resolve(Emitter);
     }
 
@@ -658,7 +660,7 @@ public:
         Arm64CodeEmitter Emitter(ExistingInstruction, 4);
         ArmBranchLinker Linker;
         Linker.SetInstructionAddressAndClass(Emitter, Class);
-        Linker.SetTarget(ULONG(4 * (TargetInstruction - ExistingInstruction)));
+        Linker.SetTarget(INT32(4 * (TargetInstruction - ExistingInstruction)));
         Linker.Resolve(Emitter);
     }
     
@@ -696,7 +698,7 @@ private:
     }
 
     ULONG m_InstructionOffset;
-    ULONG m_TargetOffset;
+    INT32 m_TargetOffset;
     BRANCH_CLASS m_BranchClass;
     bool m_Resolved;
 };
@@ -998,7 +1000,7 @@ EmitBlr(
     Arm64SimpleRegisterParam Reg
     )
 {
-    return Emitter.EmitFourBytes(0xd65f0000 | (Reg.RawRegister() << 5));
+    return Emitter.EmitFourBytes(0xd63f0000 | (Reg.RawRegister() << 5));
 }
 
 inline
@@ -1008,7 +1010,7 @@ EmitRet(
     Arm64SimpleRegisterParam Reg
     )
 {
-    return Emitter.EmitFourBytes(0xd63f0000 | (Reg.RawRegister() << 5));
+    return Emitter.EmitFourBytes(0xd65f0000 | (Reg.RawRegister() << 5));
 }
 
 //
@@ -1769,7 +1771,7 @@ EmitMovRegister(
     Arm64CodeEmitter &Emitter,
     Arm64SimpleRegisterParam Dest,
     Arm64SimpleRegisterParam Src
-    )
+)
 {
     return EmitOrrRegister(Emitter, Dest, ARMREG_ZR, Src);
 }
@@ -1780,9 +1782,31 @@ EmitMovRegister64(
     Arm64CodeEmitter &Emitter,
     Arm64SimpleRegisterParam Dest,
     Arm64SimpleRegisterParam Src
-    )
+)
 {
     return EmitOrrRegister64(Emitter, Dest, ARMREG_ZR, Src);
+}
+
+inline
+int
+EmitMvnRegister(
+    Arm64CodeEmitter &Emitter,
+    Arm64SimpleRegisterParam Dest,
+    Arm64SimpleRegisterParam Src
+)
+{
+    return EmitOrnRegister(Emitter, Dest, ARMREG_ZR, Src);
+}
+
+inline
+int
+EmitMvnRegister64(
+    Arm64CodeEmitter &Emitter,
+    Arm64SimpleRegisterParam Dest,
+    Arm64SimpleRegisterParam Src
+)
+{
+    return EmitOrnRegister64(Emitter, Dest, ARMREG_ZR, Src);
 }
 
 //
@@ -3978,12 +4002,29 @@ EmitLdpOffsetPostIndex(
     Arm64SimpleRegisterParam Dest2,
     Arm64SimpleRegisterParam Addr,
     LONG Offset
-    )
+)
 {
     if (Offset == 0) {
         return EmitLdpOffset(Emitter, Dest1, Dest2, Addr, 0);
     } else {
         return EmitLdpStpOffsetCommon(Emitter, Dest1, Dest2, Addr, Offset, 2, 0x28c00000);
+    }
+}
+
+inline
+int
+EmitLdpOffsetPostIndex64(
+    Arm64CodeEmitter &Emitter,
+    Arm64SimpleRegisterParam Dest1,
+    Arm64SimpleRegisterParam Dest2,
+    Arm64SimpleRegisterParam Addr,
+    LONG Offset
+)
+{
+    if (Offset == 0) {
+        return EmitLdpOffset64(Emitter, Dest1, Dest2, Addr, 0);
+    } else {
+        return EmitLdpStpOffsetCommon(Emitter, Dest1, Dest2, Addr, Offset, 3, 0xa8c00000);
     }
 }
 
@@ -4021,12 +4062,29 @@ EmitStpOffsetPreIndex(
     Arm64SimpleRegisterParam Source2,
     Arm64SimpleRegisterParam Addr,
     LONG Offset
-    )
+)
 {
     if (Offset == 0) {
         return EmitStpOffset(Emitter, Source1, Source2, Addr, 0);
     } else {
         return EmitLdpStpOffsetCommon(Emitter, Source1, Source2, Addr, Offset, 2, 0x29800000);
+    }
+}
+
+inline
+int
+EmitStpOffsetPreIndex64(
+    Arm64CodeEmitter &Emitter,
+    Arm64SimpleRegisterParam Source1,
+    Arm64SimpleRegisterParam Source2,
+    Arm64SimpleRegisterParam Addr,
+    LONG Offset
+)
+{
+    if (Offset == 0) {
+        return EmitStpOffset64(Emitter, Source1, Source2, Addr, 0);
+    } else {
+        return EmitLdpStpOffsetCommon(Emitter, Source1, Source2, Addr, Offset, 3, 0xa9800000);
     }
 }
 

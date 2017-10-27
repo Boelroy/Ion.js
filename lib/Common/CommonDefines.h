@@ -239,6 +239,10 @@
 #error "Background page zeroing can't be turned on if freeing pages in the background is disabled"
 #endif
 
+#ifdef _WIN32
+#define RECYCLER_VISITED_HOST
+#endif
+
 // JIT features
 
 #if DISABLE_JIT
@@ -660,6 +664,10 @@
 // #define RECYCLER_MARK_TRACK
 // #define INTERNAL_MEM_PROTECT_HEAP_ALLOC
 
+#if defined(ENABLE_JS_ETW) || defined(DUMP_FRAGMENTATION_STATS)
+#define ENABLE_MEM_STATS 1
+#endif
+
 #define NO_SANITIZE_ADDRESS
 #if defined(__has_feature)
 #if __has_feature(address_sanitizer)
@@ -687,7 +695,7 @@
 #endif
 
 #ifndef FLOATVAR
-#if defined(_M_X64)
+#if defined(_M_X64_OR_ARM64)
 #define FLOATVAR 1
 #else
 #define FLOATVAR 0
