@@ -23,7 +23,7 @@ function setInterval(callback, delay) {
 };
 
 function clearTimeout(timer) {
-  timer.Stop();
+  timer.Close();
   delete timer;
 };
 

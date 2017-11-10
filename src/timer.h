@@ -15,7 +15,9 @@ static JsValueRef TimerProtype;
 class Timer {
   public:
     Timer(JsValueRef callback);
-    ~Timer();
+    ~Timer() {
+      
+    };
   
   static JsValueRef Constructor(JsValueRef callee, bool isConstructCall, JsValueRef *arguments, unsigned short argumentCount, void *callbackState);
   static JsValueRef Start(JsValueRef callee, bool isConstructCall, JsValueRef *arguments, unsigned short argumentCount, void *callbackState);
@@ -33,6 +35,11 @@ Timer::Timer(JsValueRef callback_) {
   callback = callback_;
 }
 
+void TimerFinalize(void *data) {
+  Timer *timer = static_cast<Timer *>(data);
+  delete timer;
+}
+
 JsValueRef
 Timer::Constructor(JsValueRef callee, bool isConstructCall, JsValueRef *arguments, unsigned short argumentCount, void *callbackState) {
   assert(isConstructCall);
@@ -40,7 +47,7 @@ Timer::Constructor(JsValueRef callee, bool isConstructCall, JsValueRef *argument
   Timer *t = new Timer(arguments[1]);
 
   JsValueRef output = JS_INVALID_REFERENCE;
-  JsCreateExternalObject(t, nullptr, &output);
+  JsCreateExternalObject(t, TimerFinalize, &output);
   JsSetPrototype(output, TimerProtype);
   return output;
 }
@@ -61,7 +68,7 @@ Timer::Start(JsValueRef callee, bool isConstructCall, JsValueRef *arguments, uns
 
   uint64_t dly = static_cast<uint64_t>(delay);
   uint64_t rpt = static_cast<uint64_t>(repeat);
-  uv_timer_start(&timer->_handler, OnTimeOut, dly, repeat);
+  uv_timer_start(&timer->_handler, OnTimeOut, dly, rpt);
 
   JsValueRef undefinedValue;
   JsGetUndefinedValue(&undefinedValue);
