@@ -1,4 +1,43 @@
 (function(){
+
+  const internalModuleCache = {};
+
+  class Module {
+    constructor(id, parent) {
+      this.id = id;
+      this.exports = {};
+      this.parent = parent;
+
+      if (parent) {
+        this.moduleCache = parent.moduleCache;
+      } else {
+        this.moduleCache = {};
+      }
+
+      this.filename = null;
+      this.loaded = false;
+      this.exited = false;
+      this.children = [];
+    }
+  }
+
+  function createInternalModule(id, constructor) {
+    var m = new Module(id);
+    constructor(m.exports);
+    m.loaded = true;
+    internalModuleCache[id] = m;
+    return m;
+  }
+
+  function loadNative(id) {
+    var m = new Module(id);
+    internalModuleCache[id] = m;
+    var e = m._compile("" , id); // TODO::
+    if (e) throw e;
+    m.loaded = true;
+    return m;
+  }
+
   function findScript(base_directory, name, callback) {
     // var filename = base_directory + '/' + name;
     // fs.exists(filename, function() {
@@ -31,7 +70,11 @@
                 + source
                 + "  this.__onLoad = onLoad;"
                 + "})";
-    var compiled = global.vm.compile(source, filename);
+    try {
+      var compiled = global.vm.compile(source, filename);
+    } catch (e) {
+      console.log("Exception:");
+    }
 
     module.__subs = [];
     module.__require = function(name) {
@@ -65,7 +108,7 @@
         //node.debug("calling onLoad for <" + filename + ">"); 
         scaffold.onLoad(); 
       }
-      
+
       if (callback instanceof Function) {
         callback();
       }
@@ -86,13 +129,19 @@
     }
   }
 
-  // const module = {};
-  // global.require = function(moduleName) {
-  //   let code = "(function(module, exports){" + fs.readFileSync(moduleName) + "})";
-  //   const modulefn = global.vm.compile(code, moduleName);
-  //   const exports = {};
-  //   modulefn.apply(this, module, exports);
-  // }
+  const moduleCache = {};
+  
+  global.require = function(moduleName) {
+    if (moduleCache[moduleName]) return moduleCache[moduleName];
+
+    let code = "(function(exports){" + fs.readFileSync(moduleName) + "})";
+    const modulefn = global.vm.compile(code, moduleName);
+    const exports = {};
+    modulefn.apply(this, [exports]);
+    moduleCache[moduleName] = exports;
+    return exports;
+  }
+
   if (process.argv[1]) {
     loadScript(process.argv[1], global);
   }
