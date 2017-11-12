@@ -1,6 +1,7 @@
-var test = require("../test/mjsunit.js");
+// var test = require("../test/mjsunit.js");
 
-function onLoad() {
+var test = global.require("../test/mjsunit.js");
+// function onLoad() {
   test.assertInstanceof(setTimeout, Function);
 
   var starttime = new Date;
@@ -28,4 +29,4 @@ function onLoad() {
       clearInterval(timer);
     }
   }, 1000);
-}
+// }
