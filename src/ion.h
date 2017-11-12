@@ -42,7 +42,6 @@ do                                                 \
    JsErrorCode errCode = cmd;                      \
    if (errCode != JsNoError)                       \
    {                                               \
-     printf("Error %d at '%s' \n", errCode, #cmd); \
      return ion_set_last_error(errCode);           \
    }                                               \
 } while(0)
@@ -53,7 +52,6 @@ do                                                 \
    JsErrorCode errCode = cmd;                      \
    if (errCode != JsNoError)                       \
    {                                               \
-      printf("Error %d at '%s' \n", errCode, #cmd);\
       ion_set_last_error(errCode);                 \
    }                                               \
 } while(0)

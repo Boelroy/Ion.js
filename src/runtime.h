@@ -75,13 +75,19 @@ namespace runtime{
       }
 
       static napi_status GetException() {
+        JsValueRef exceptionMeta;
+        FAIL_CHECK(JsGetAndClearExceptionWithMetadata(&exceptionMeta));
+        JsPropertyIdRef exceptionProperty;
+        FAIL_CHECK(JsCreatePropertyId("exception", 9, &exceptionProperty));
+
+        JsPropertyIdRef stackProperty;
+        FAIL_CHECK(JsCreatePropertyId("stack", 5, &stackProperty));
+
         JsValueRef exception;
-        FAIL_CHECK(JsGetAndClearExceptionWithMetadata(&exception));
-        JsPropertyIdRef sourceProperty;
-        FAIL_CHECK(JsCreatePropertyId("source", 6, &sourceProperty));
+        FAIL_CHECK(JsGetProperty(exceptionMeta, exceptionProperty, &exception));
 
         JsValueRef stackInfo;
-        FAIL_CHECK(JsGetProperty(exception, sourceProperty, &stackInfo));
+        FAIL_CHECK(JsGetProperty(exception, stackProperty, &stackInfo));
         // log error
 
         JsValueRef arg[] = {nullptr, stackInfo};
@@ -95,7 +101,7 @@ namespace runtime{
         napi_value sourceUrl = arguments[2];
         JsErrorCode errCode = JsRun(src, 0, sourceUrl, JsParseScriptAttributeNone, &result);
         if (errCode != JsNoError) {
-          GetException();
+          // GetException();
         }
         return result;
       }
