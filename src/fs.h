@@ -90,7 +90,7 @@ napi_value GetStatObject(uv_stat_t stat, napi_value *js_stat) {
 	ion_define_int(*js_stat, "blksize", stat.st_blksize);
 	ion_define_int(*js_stat, "blocks", stat.st_blocks);
 	#define X(name, field_name) \
-	ion_define_unsigned_long(*js_stat, name, ((unsigned long)(stat.st_##field_name.tv_sec)) * 1e3 + \
+	ion_define_int64(*js_stat, name, ((unsigned long)(stat.st_##field_name.tv_sec)) * 1e3 + \
 																((unsigned long)(stat.st_##field_name.tv_nsec)) / 1e6); \
 
 	X("atime", atim);

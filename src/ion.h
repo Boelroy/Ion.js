@@ -99,6 +99,20 @@ napi_status ion_define_int(napi_value env, const char* name,const int integer) {
   return napi_ok;
 }
 
+napi_status ion_define_uint32(napi_value env, const char* name,const uint32_t integer) {
+  napi_value _interger;
+  FAIL_CHECK(JsDoubleToNumber(static_cast<double>(integer), &_interger));
+  ion_define(env, name, _interger);  
+  return napi_ok;
+}
+
+napi_status ion_define_int64(napi_value env, const char* name,const uint64_t integer) {
+  napi_value _interger;
+  FAIL_CHECK(JsDoubleToNumber(static_cast<double>(integer), &_interger));
+  ion_define(env, name, _interger);  
+  return napi_ok;
+}
+
 napi_status ion_define_unsigned_long(napi_value env, const char* name,const unsigned long integer) {
   napi_value _interger;
   FAIL_CHECK(JsIntToNumber(integer, &_interger));
