@@ -75,12 +75,38 @@ void DefineConstants(napi_value fs) {
 	ion_define(fs, "constants", constants);
 }
 
+
+napi_value GetStatObject(uv_stat_t stat, napi_value *js_stat) {
+	ion_create_object(js_stat);
+
+	ion_define_int(*js_stat, "dev", stat.st_dev);
+	ion_define_int(*js_stat, "mode", stat.st_mode);
+	ion_define_int(*js_stat, "nlink", stat.st_nlink);
+	ion_define_int(*js_stat, "uid", stat.st_uid);
+	ion_define_int(*js_stat, "gid", stat.st_gid);
+	ion_define_int(*js_stat, "rdev", stat.st_rdev);
+	ion_define_int(*js_stat, "ino", stat.st_ino);
+	ion_define_int(*js_stat, "size", stat.st_size);
+	ion_define_int(*js_stat, "blksize", stat.st_blksize);
+	ion_define_int(*js_stat, "blocks", stat.st_blocks);
+	#define X(name, field_name) \
+	ion_define_unsigned_long(*js_stat, name, ((unsigned long)(stat.st_##field_name.tv_sec)) * 1e3 + \
+																((unsigned long)(stat.st_##field_name.tv_nsec)) / 1e6); \
+
+	X("atime", atim);
+	X("ctime", ctim);
+	X("birthtime", birthtim);
+	#undef X
+
+	return js_stat;
+}
+
 void After(uv_fs_t *req) {
 	FSReqWrap *fs_req_wrap = static_cast<FSReqWrap*>(req->data);
 	napi_value callback = fs_req_wrap->callback();
 	JsValueRef argv[6];
 	int argc = 1;
-	if (req->result > 0) {
+	if (req->result >= 0) {
 		switch(req->fs_type) {
 			case UV_FS_CLOSE:
 				break;
@@ -89,6 +115,11 @@ void After(uv_fs_t *req) {
 				argc = 2;
 				break;
 			case UV_FS_READ:
+				break;
+			case UV_FS_STAT:
+				std::cout << "in fs stat" << std::endl;
+				GetStatObject(req->statbuf, argv + 1);
+				argc = 2;
 				break;
 			default:
 			perror("unhandle uv ops");
@@ -141,7 +172,7 @@ ION_FUNCTION(Close){
 	JsValueRef undefinedValue;
 	JsGetUndefinedValue(&undefinedValue);
 
-	FSReqWrap *reqwrap = new FSReqWrap(arguments[argumentCount - 1]);
+	FSReqWrap *reqwrap = new FSReqWrap(callback);
 	reqwrap->req()->data = reqwrap;
 
 	bool result;
@@ -153,6 +184,34 @@ ION_FUNCTION(Close){
 	}
 
 	return undefinedValue;
+}
+
+ION_FUNCTION(Stat) {
+	napi_value callback = arguments[argumentCount - 1];
+	FSReqWrap *reqwrap = new FSReqWrap(callback);
+	reqwrap->req()->data = reqwrap;
+
+	JsValueRef undefinedValue;
+	JsGetUndefinedValue(&undefinedValue);
+
+	bool result;
+	JsEquals(callback, undefinedValue, &result);
+
+	strcpy(getbuf, ion_get_string(arguments[1]).c_str());
+
+	if (!result) {
+		uv_fs_stat(reqwrap->env()->event_loop(), reqwrap->req(), getbuf, After);
+		return undefinedValue;
+	}
+	int error = uv_fs_stat(reqwrap->env()->event_loop(), reqwrap->req(), getbuf, nullptr);
+
+	napi_value stat;
+	if (error == 0) {
+		 GetStatObject(reqwrap->req()->statbuf, &stat);
+	}
+
+	return stat;
+
 }
 
 ION_FUNCTION(Read){
@@ -202,6 +261,7 @@ void DefineMethod(napi_value fs) {
 	ION_SET_METHOD(fs, "close", Close);
 	ION_SET_METHOD(fs, "read", Read);
 	ION_SET_METHOD(fs, "write", Write);
+	ION_SET_METHOD(fs, "stat", Stat);
 }
 
 void Init(napi_value env) {

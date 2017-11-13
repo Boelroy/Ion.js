@@ -99,6 +99,13 @@ napi_status ion_define_int(napi_value env, const char* name,const int integer) {
   return napi_ok;
 }
 
+napi_status ion_define_unsigned_long(napi_value env, const char* name,const unsigned long integer) {
+  napi_value _interger;
+  FAIL_CHECK(JsIntToNumber(integer, &_interger));
+  ion_define(env, name, _interger);  
+  return napi_ok;
+}
+
 napi_status ion_get_and_clear_last(napi_value env, napi_value *result) {
   FAIL_CHECK(JsGetAndClearException(result));
   if (result == nullptr) {

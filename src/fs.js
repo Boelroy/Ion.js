@@ -12,3 +12,11 @@ fs.writeFileSync = function(fd, content, offset) {
   const constants = fs.constants;
   fs.write(fd, content, offset);
 }
+
+fs.statSync = function(path) {
+  return fs.stat(path, undefined);
+}
+
+fs.stat("./ion", function(stat) {
+  console.log(stat);
+});
