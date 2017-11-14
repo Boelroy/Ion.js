@@ -139,6 +139,8 @@ void After(uv_fs_t *req) {
 		switch(req->fs_type) {
 			case UV_FS_CLOSE:
 				break;
+			case UV_FS_RMDIR:
+			case UV_FS_UNLINK:
 			case UV_FS_RENAME:
 			case UV_FS_OPEN:
 				JsIntToNumber(req->result, argv + 1);
@@ -265,6 +267,52 @@ ION_FUNCTION(Rename) {
 		return undefinedValue;
 	} else {
 		uv_fs_rename(reqwrap->env()->event_loop(), reqwrap->req(), *path, *new_path, nullptr);
+	}
+	delete reqwrap;
+	return undefinedValue;
+}
+
+ION_FUNCTION(Unlink) {
+	napi_value callback = arguments[argumentCount - 1];
+	FSReqWrap *reqwrap = new FSReqWrap(callback);
+	reqwrap->req()->data = reqwrap;
+
+	JsValueRef undefinedValue;
+	JsGetUndefinedValue(&undefinedValue);
+
+	bool result;
+	JsEquals(callback, undefinedValue, &result);
+
+	BufferValue path(arguments[1]);
+
+	if (!result) {
+		uv_fs_unlink(reqwrap->env()->event_loop(), reqwrap->req(), *path, After);
+		return undefinedValue;
+	} else {
+		uv_fs_unlink(reqwrap->env()->event_loop(), reqwrap->req(), *path, nullptr);
+	}
+	delete reqwrap;
+	return undefinedValue;
+}
+
+ION_FUNCTION(Rmdir) {
+	napi_value callback = arguments[argumentCount - 1];
+	FSReqWrap *reqwrap = new FSReqWrap(callback);
+	reqwrap->req()->data = reqwrap;
+
+	JsValueRef undefinedValue;
+	JsGetUndefinedValue(&undefinedValue);
+
+	bool result;
+	JsEquals(callback, undefinedValue, &result);
+
+	BufferValue path(arguments[1]);
+
+	if (!result) {
+		uv_fs_rmdir(reqwrap->env()->event_loop(), reqwrap->req(), *path, After);
+		return undefinedValue;
+	} else {
+		uv_fs_rmdir(reqwrap->env()->event_loop(), reqwrap->req(), *path, nullptr);
 	}
 	delete reqwrap;
 	return undefinedValue;
