@@ -141,9 +141,4 @@ namespace runtime{
       unsigned currentSourceContext;
       static std::string MODLUE_WRAPPER[];
   };
-
-  std::string Runtime::MODLUE_WRAPPER[] = {
-    "(function (__filename, __dirname) {",
-    "})"
-  };
 }}}

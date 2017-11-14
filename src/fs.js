@@ -17,6 +17,6 @@ fs.statSync = function(path) {
   return fs.stat(path, undefined);
 }
 
-fs.stat("./ion", function(stat) {
-  console.log(stat);
-});
+fs.renameSync = function(path, newPath) {
+  return fs.rename(path, newPath, undefined);
+}
